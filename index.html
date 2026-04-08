@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Drone Rastro - Completo v5 (Aviãozinho + Minimizar)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;overflow:hidden}
+    #map{height:100vh;width:100vw}
+    .toolbar{
+      position:absolute;
+      top:10px;
+      left:10px;
+      background:white;
+      padding:14px;
+      border-radius:10px;
+      box-shadow:0 3px 15px rgba(0,0,0,0.25);
+      z-index:1000;
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      width:280px;
+      max-height:95vh;
+      overflow-y:auto;
+      transition:all 0.3s ease;
+    }
+    .toolbar.minimized {
+      width: auto;
+      padding: 8px;
+      max-height: none;
+      overflow: visible;
+    }
+    .toolbar.minimized > *:not(#btnToggleToolbar) {
+      display: none;
+    }
+    .toolbar.minimized #btnToggleToolbar {
+      display: block;
+      min-width: 160px;
+      margin: 0;
+    }
+    .toolbar h3{text-align:center;font-size:15px;margin-bottom:2px}
+    .toolbar button{padding:9px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:13px;transition:all 0.2s;}
+    .toolbar button:hover{opacity:0.88;transform:scale(1.02)}
+    .btn-toggle{background:#37474F;color:white;margin-bottom:5px;}
+    .btn-area{background:#2196F3;color:white}
+    .btn-obs{background:#f44336;color:white}
+    .btn-drone{background:#FF9800;color:white}
+    .btn-gerar{background:#4CAF50;color:white;font-size:15px;padding:11px}
+    .btn-desfazer{background:#9E9E9E;color:white}
+    .btn-limpar{background:#607D8B;color:white}
+    .btn-download{background:#9C27B0;color:white}
+    .toolbar input[type=range]{width:100%}
+    .toolbar hr{margin:2px 0;border:none;border-top:1px solid #eee}
+    .lbl{font-size:12px;font-weight:600;color:#555}
+    .row{display:flex;gap:5px}
+    .row button{flex:1}
+    .status{position:absolute;bottom:20px;left:10px;background:rgba(0,0,0,0.72);color:white;padding:8px 16px;border-radius:25px;font-size:14px;z-index:1000;backdrop-filter:blur(5px);max-width:340px;}
+    .area-info{position:absolute;background:rgba(255,255,255,0.9);padding:8px 14px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.18);z-index:900;text-align:center;pointer-events:auto;display:none;min-width:150px;cursor:move;border:1px solid rgba(0,0,0,0.1);}
+    .area-info .ha{font-size:22px;font-weight:700;color:#1a6e1a}
+    .area-info .nome{font-size:13px;color:#444;margin-top:2px;word-break:break-word}
+    .legenda{position:absolute;bottom:20px;right:10px;background:rgba(255,255,255,0.92);padding:8px 12px;border-radius:8px;font-size:12px;z-index:1000;box-shadow:0 2px 5px rgba(0,0,0,0.18);}
+    label{font-size:12px}
+    input[type=text],input[type=number]{padding:5px;border:1px solid #ccc;border-radius:4px;font-size:13px;}
+    .note{font-size:11px;color:#888;margin-top:2px;}
+    .section-title{font-size:13px;font-weight:700;color:#333;margin-top:5px;margin-bottom:2px;}
+  </style>
+</head>
+<body>
+<div class="toolbar" id="toolbar">
+  <button class="btn-toggle" id="btnToggleToolbar">🗕 Minimizar painel</button>
+  
+  <h3>🎮 Controle de Voo v5</h3>
+  
+  <div class="section-title">📋 Ações principais</div>
+  <button class="btn-area" id="btnArea">📐 1. Mapear Área</button>
+  <button class="btn-obs" id="btnObs">🌲 2. Adicionar Obstáculo</button>
+  <button class="btn-drone" id="btnDrone">📍 3. Posicionar Drone</button>
+  
+  <hr>
+  <div class="row">
+    <button class="btn-desfazer" id="btnDesfazer">↩️ Desfazer</button>
+    <button class="btn-limpar" id="btnLimpar">🧹 Limpar</button>
+  </div>
+  
+  <hr>
+  <div class="section-title">⚙️ Rotas</div>
+  <label>Ângulo: <input type="range" id="angulo" min="0" max="179" value="0"> <span id="anguloVal">0°</span></label>
+  <label>Espaçamento (m): <input type="number" id="espacamento" value="5" min="1" max="500" style="width:70px"></label>
+  <label>Cor da rota: <input type="color" id="cor" value="#00ff00"></label>
+  
+  <div class="section-title">🌲 Obstáculos</div>
+  <label>Margem (m): <input type="number" id="margemObs" value="5" min="1" max="100" style="width:70px"></label>
+  <label>Precisão amostragem (m): <input type="number" id="sampleStep" value="1.0" min="0.3" max="5" step="0.1" style="width:70px"></label>
+  <div class="note">⬇️ Menor = mais preenchimento</div>
+  
+  <div class="section-title">📍 Drone (Aviãozinho)</div>
+  <label>Tamanho: <input type="range" id="droneSize" min="3" max="20" value="8"></label>
+  <label>Cor do drone: <input type="color" id="droneColor" value="#FF9800"></label>
+  <label>Rotação (°): <input type="range" id="droneHeading" min="0" max="359" value="0"> <span id="headingVal">0°</span></label>
+  <label>Conectar a cada N rotas: <input type="number" id="conexaoStep" value="1" min="1" max="200" style="width:70px"></label>
+  <div class="note">1 = todas | 5 = 1 sim, 4 não</div>
+  
+  <div class="section-title">📊 Informações</div>
+  <label>Tamanho info (px): <input type="range" id="infoSize" min="14" max="48" value="22"> <span id="infoSizeVal">22px</span></label>
+  <label>Nome da área:<br><input type="text" id="nomeArea" placeholder="Ex: Fazenda João" style="width:100%;margin-top:3px"></label>
+  
+  <hr>
+  <button class="btn-gerar" id="btnGerar">✈️ GERAR ROTAS</button>
+  <button class="btn-download" id="btnDownload">⬇️ Baixar KML</button>
+  <small style="text-align:center;color:#4CAF50;">✅ Cobertura total | ❌ Desvia obstáculos</small>
+</div>
+
+<div class="area-info" id="areaInfo">
+  <div class="ha" id="areaHa">0 ha</div>
+  <div class="nome" id="areaNome"></div>
+</div>
+<div class="status" id="status">🎯 Clique em "Mapear Área" para começar.</div>
+<div class="legenda">
+  <b>Legenda:</b><br>
+  <span style="color:#2196F3">■</span> Área mapeada<br>
+  <span style="color:#f44336">■</span> Obstáculos<br>
+  <span style="color:#FF9800">✈️</span> Drone<br>
+  <span style="color:#00ff00">━</span> Rotas
+</div>
+<div id="map"></div>
+
+<script>
+// Inicialização do mapa
+var map = L.map('map', { doubleClickZoom: false }).setView([-22.33, -50.41], 18);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri'
+}).addTo(map);
+
+// Camadas
+var areaLayer = new L.FeatureGroup().addTo(map);
+var obstaculosLayer = new L.FeatureGroup().addTo(map);
+var rotasLayer = L.layerGroup().addTo(map);
+var extrasLayer = L.layerGroup().addTo(map);
+var droneMarker = null;
+
+// Histórico
+var historico = { areas: [], obstaculos: [] };
+var drawAreaHandler = null, drawObsHandler = null;
+var posicionandoDrone = false;
+
+// Estilos
+var estiloArea = { color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.15, weight: 3 };
+var estiloObs = { color: '#f44336', fillColor: '#f44336', fillOpacity: 0.3, weight: 3 };
+
+// Flag para evitar loops
+var isGenerating = false;
+
+function setStatus(m) { 
+  document.getElementById('status').innerHTML = m; 
+  console.log('Status:', m);
+}
+
+// ====================== MINIMIZAR/EXPANDIR PAINEL ======================
+(function () {
+  var toolbar = document.getElementById('toolbar');
+  var btn = document.getElementById('btnToggleToolbar');
+  if (!toolbar || !btn) return;
+
+  btn.onclick = function () {
+    var isMin = toolbar.classList.toggle('minimized');
+    btn.textContent = isMin ? '🗖 Expandir painel' : '🗕 Minimizar painel';
+  };
+})();
+
+// ====================== DRONE EM FORMATO DE AVIÃOZINHO ======================
+function buildDronePlaneLatLngs(lat, lng, sizeDeg, headingDeg) {
+  // Formato de aviãozinho de papel (seta aerodinâmica)
+  var pts = [
+    [ 0.00,  1.20],  // ponta (nariz)
+    [ 0.35,  0.30],  // asa direita frente
+    [ 0.15,  0.10],  // corpo direito
+    [ 0.30, -0.50],  // asa direita trás
+    [ 0.10, -0.70],  // cauda direita
+    [ 0.00, -0.50],  // rabo centro
+    [-0.10, -0.70],  // cauda esquerda
+    [-0.30, -0.50],  // asa esquerda trás
+    [-0.15,  0.10],  // corpo esquerdo
+    [-0.35,  0.30]   // asa esquerda frente
+  ];
+
+  var rad = (headingDeg || 0) * Math.PI / 180;
+  var cos = Math.cos(rad);
+  var sin = Math.sin(rad);
+
+  return pts.map(function (p) {
+    var x = p[0] * sizeDeg;
+    var y = p[1] * sizeDeg;
+
+    // rotação 2D
+    var xr = x * cos - y * sin;
+    var yr = x * sin + y * cos;
+
+    return [lat + yr, lng + xr];
+  });
+}
+
+// Atualizar painel de hectares
+function atualizarInfoArea(reposition = true) {
+  var layers = areaLayer.getLayers();
+  if (!layers.length) {
+    document.getElementById('areaInfo').style.display = 'none';
+    return;
+  }
+  var geo = layers[0].toGeoJSON();
+  var ha = (turf.area(geo) / 10000).toFixed(2);
+  var nome = document.getElementById('nomeArea').value.trim() || 'Área sem nome';
+  document.getElementById('areaHa').textContent = ha + ' ha';
+  document.getElementById('areaNome').textContent = nome;
+  document.getElementById('areaInfo').style.display = 'block';
+
+  if (reposition) {
+    var centro = turf.centroid(geo).geometry.coordinates;
+    var ponto = map.latLngToContainerPoint([centro[1], centro[0]]);
+    var panel = document.getElementById('areaInfo');
+    panel.style.left = ponto.x + 'px';
+    panel.style.top = ponto.y + 'px';
+    panel.style.transform = 'translate(-50%, -50%)';
+  }
+}
+
+// Arrastar painel de info
+var areaInfoPanel = document.getElementById('areaInfo');
+var draggingInfo = false, startX, startY, startLeft, startTop;
+
+areaInfoPanel.addEventListener('mousedown', function(e) {
+  draggingInfo = true;
+  startX = e.clientX; 
+  startY = e.clientY;
+  startLeft = parseFloat(areaInfoPanel.style.left) || 0;
+  startTop = parseFloat(areaInfoPanel.style.top) || 0;
+  map.dragging.disable();
+  L.DomEvent.stop(e);
+});
+
+document.addEventListener('mousemove', function(e) {
+  if (!draggingInfo) return;
+  areaInfoPanel.style.left = (startLeft + e.clientX - startX) + 'px';
+  areaInfoPanel.style.top = (startTop + e.clientY - startY) + 'px';
+});
+
+document.addEventListener('mouseup', function() {
+  if (draggingInfo) {
+    draggingInfo = false;
+    map.dragging.enable();
+  }
+});
+
+// Tamanho da info
+document.getElementById('infoSize').oninput = function() {
+  var val = this.value;
+  document.getElementById('infoSizeVal').innerText = val + 'px';
+  document.getElementById('areaHa').style.fontSize = val + 'px';
+};
+
+// Ângulo - ATUALIZAÇÃO AUTOMÁTICA
+document.getElementById('angulo').oninput = function() {
+  document.getElementById('anguloVal').innerText = this.value + '°';
+  if (areaLayer.getLayers().length > 0) gerarRotas();
+};
+
+// Espaçamento - ATUALIZAÇÃO AUTOMÁTICA
+document.getElementById('espacamento').oninput = function() {
+  if (areaLayer.getLayers().length > 0) gerarRotas();
+};
+
+// Cor da rota - ATUALIZAÇÃO AUTOMÁTICA
+document.getElementById('cor').oninput = function() {
+  if (areaLayer.getLayers().length > 0 && rotasLayer.getLayers().length > 0) gerarRotas();
+};
+
+// Margem - ATUALIZAÇÃO AUTOMÁTICA
+document.getElementById('margemObs').oninput = function() {
+  if (areaLayer.getLayers().length > 0) gerarRotas();
+};
+
+// Precisão amostragem - ATUALIZAÇÃO AUTOMÁTICA
+document.getElementById('sampleStep').oninput = function() {
+  if (areaLayer.getLayers().length > 0) gerarRotas();
+};
+
+// Conexão step - ATUALIZAÇÃO AUTOMÁTICA
+document.getElementById('conexaoStep').oninput = function() {
+  if (areaLayer.getLayers().length > 0 && rotasLayer.getLayers().length > 0) gerarRotas();
+};
+
+// Rotação do drone
+document.getElementById('droneHeading').oninput = function() {
+  document.getElementById('headingVal').innerText = this.value + '°';
+  if (!droneMarker) return;
+  var c = droneMarker.getBounds().getCenter();
+  criarDrone(c.lat, c.lng);
+};
+
+// Cor do drone - ATUALIZAÇÃO AUTOMÁTICA
+document.getElementById('droneColor').oninput = function() {
+  if (!droneMarker) return;
+  var c = droneMarker.getBounds().getCenter();
+  criarDrone(c.lat, c.lng);
+  if (rotasLayer.getLayers().length > 0) gerarRotas();
+};
+
+// Botões principais
+document.getElementById('btnArea').onclick = function() {
+  if (drawObsHandler) drawObsHandler.disable();
+  posicionandoDrone = false;
+  drawAreaHandler = new L.Draw.Polygon(map, { 
+    shapeOptions: estiloArea, 
+    allowIntersection: false, 
+    showArea: true 
+  });
+  drawAreaHandler.enable();
+  setStatus('🖱️ Desenhe o polígono da área de voo.');
+};
+
+document.getElementById('btnObs').onclick = function() {
+  if (!areaLayer.getLayers().length) {
+    alert('⚠️ Mapeie a área primeiro!');
+    return;
+  }
+  if (drawAreaHandler) drawAreaHandler.disable();
+  posicionandoDrone = false;
+  drawObsHandler = new L.Draw.Polygon(map, { shapeOptions: estiloObs });
+  drawObsHandler.enable();
+  setStatus('🌲 Desenhe um obstáculo dentro da área.');
+};
+
+document.getElementById('btnDrone').onclick = function() {
+  if (drawAreaHandler) drawAreaHandler.disable();
+  if (drawObsHandler) drawObsHandler.disable();
+  posicionandoDrone = true;
+  map.getContainer().style.cursor = 'crosshair';
+  setStatus('📍 Clique no mapa para posicionar o drone.');
+};
+
+// Criar drone (aviãozinho)
+function criarDrone(lat, lng) {
+  if (droneMarker) map.removeLayer(droneMarker);
+
+  var size = parseInt(document.getElementById('droneSize').value, 10) || 8;
+  var sizeDeg = size / 100000;
+  var droneColor = document.getElementById('droneColor').value || '#FF9800';
+  var heading = parseInt(document.getElementById('droneHeading').value, 10) || 0;
+
+  var planeLatLngs = buildDronePlaneLatLngs(lat, lng, sizeDeg, heading);
+
+  droneMarker = L.polygon(planeLatLngs, {
+    color: droneColor,
+    fillColor: droneColor,
+    fillOpacity: 0.9,
+    weight: 2
+  }).addTo(map);
+
+  ativarDrag(droneMarker);
+  setStatus('✅ Drone posicionado. Pode arrastar para ajustar.');
+
+  if (rotasLayer.getLayers().length > 0) {
+    gerarRotas();
+  }
+}
+
+// Arrastar drone
+function ativarDrag(poly) {
+  var dragging = false, last;
+  
+  poly.on('mousedown', function(e) {
+    dragging = true;
+    last = e.latlng;
+    map.dragging.disable();
+    L.DomEvent.stop(e);
+  });
+  
+  map.on('mousemove', function(e) {
+    if (!dragging) return;
+    var dLat = e.latlng.lat - last.lat;
+    var dLng = e.latlng.lng - last.lng;
+    last = e.latlng;
+    poly.setLatLngs(poly.getLatLngs()[0].map(function(p) {
+      return [p.lat + dLat, p.lng + dLng];
+    }));
+  });
+  
+  map.on('mouseup', function() {
+    if (dragging) {
+      dragging = false;
+      map.dragging.enable();
+      if (rotasLayer.getLayers().length > 0) {
+        gerarRotas();
+      }
+    }
+  });
+}
+
+// Clique para drone
+map.on('click', function(e) {
+  if (!posicionandoDrone) return;
+  criarDrone(e.latlng.lat, e.latlng.lng);
+  posicionandoDrone = false;
+  map.getContainer().style.cursor = '';
+});
+
+// Evento de criação de geometria
+map.on(L.Draw.Event.CREATED, function(e) {
+  var layer = e.layer;
+  
+  if (drawAreaHandler && drawAreaHandler.enabled()) {
+    if (areaLayer.getLayers().length) {
+      historico.areas.push(areaLayer.getLayers()[0]);
+    }
+    areaLayer.clearLayers();
+    areaLayer.addLayer(layer);
+    drawAreaHandler.disable();
+    atualizarInfoArea(true);
+    setStatus('✅ Área mapeada! Agora adicione obstáculos (opcional).');
+  } 
+  else if (drawObsHandler && drawObsHandler.enabled()) {
+    obstaculosLayer.addLayer(layer);
+    historico.obstaculos.push(layer);
+    drawObsHandler.disable();
+    setStatus('🌲 Obstáculo adicionado.');
+    
+    if (rotasLayer.getLayers().length > 0) {
+      gerarRotas();
+    }
+  }
+});
+
+// Evento de edição/deleção
+map.on(L.Draw.Event.EDITED, function() {
+  atualizarInfoArea(true);
+  if (rotasLayer.getLayers().length > 0) gerarRotas();
+});
+
+map.on(L.Draw.Event.DELETED, function() {
+  if (areaLayer.getLayers().length === 0) {
+    document.getElementById('areaInfo').style.display = 'none';
+    rotasLayer.clearLayers();
+    extrasLayer.clearLayers();
+  }
+  if (rotasLayer.getLayers().length > 0) gerarRotas();
+});
+
+// Desfazer
+document.getElementById('btnDesfazer').onclick = function() {
+  if (drawObsHandler) drawObsHandler.disable();
+  if (drawAreaHandler) drawAreaHandler.disable();
+  
+  if (historico.obstaculos.length) {
+    var ultimo = historico.obstaculos.pop();
+    obstaculosLayer.removeLayer(ultimo);
+    setStatus('↩️ Último obstáculo removido.');
+    if (rotasLayer.getLayers().length > 0) gerarRotas();
+  } 
+  else if (historico.areas.length) {
+    areaLayer.clearLayers();
+    var anterior = historico.areas.pop();
+    areaLayer.addLayer(anterior);
+    atualizarInfoArea(true);
+    setStatus('↩️ Área anterior restaurada.');
+    if (rotasLayer.getLayers().length > 0) gerarRotas();
+  }
+  else {
+    alert('Nada para desfazer.');
+  }
+};
+
+// Limpar tudo
+document.getElementById('btnLimpar').onclick = function() {
+  areaLayer.clearLayers();
+  obstaculosLayer.clearLayers();
+  rotasLayer.clearLayers();
+  extrasLayer.clearLayers();
+  if (droneMarker) map.removeLayer(droneMarker);
+  droneMarker = null;
+  historico = { areas: [], obstaculos: [] };
+  document.getElementById('areaInfo').style.display = 'none';
+  setStatus('🧹 Tudo limpo. Comece mapeando a área.');
+};
+
+// Ajustar tamanho do drone
+document.getElementById('droneSize').oninput = function() {
+  if (!droneMarker) return;
+  var center = droneMarker.getBounds().getCenter();
+  criarDrone(center.lat, center.lng);
+};
+
+// ====================== FUNÇÕES DE GERAÇÃO DE ROTAS (AMOSTRAGEM) ======================
+
+function pointIsValid(coord, areaGeo, obstacleBuffers) {
+  var pt = turf.point(coord);
+
+  if (!turf.booleanPointInPolygon(pt, areaGeo)) return false;
+
+  for (var i = 0; i < obstacleBuffers.length; i++) {
+    if (turf.booleanPointInPolygon(pt, obstacleBuffers[i])) return false;
+  }
+
+  return true;
+}
+
+function segmentLineByValidity(line, areaGeo, obstacleBuffers, sampleStepMeters) {
+  var chunks = [];
+  var current = [];
+
+  var totalKm = turf.length(line, { units: 'kilometers' });
+  if (totalKm === 0) return chunks;
+
+  var stepKm = sampleStepMeters / 1000;
+
+  for (var d = 0; d <= totalKm + 1e-9; d += stepKm) {
+    var p = turf.along(line, Math.min(d, totalKm), { units: 'kilometers' });
+    var coord = p.geometry.coordinates;
+    var ok = pointIsValid(coord, areaGeo, obstacleBuffers);
+
+    if (ok) {
+      current.push(coord);
+    } else {
+      if (current.length >= 2) chunks.push(turf.lineString(current));
+      current = [];
+    }
+  }
+
+  if (current.length >= 2) chunks.push(turf.lineString(current));
+
+  return chunks;
+}
+
+function addRouteSegment(segment, cor) {
+  var coords = segment.geometry && segment.geometry.coordinates;
+  if (!coords || coords.length < 2) return null;
+
+  var latlngs = coords.map(function (c) { return [c[1], c[0]]; });
+
+  return L.polyline(latlngs, {
+    color: cor,
+    weight: 2.5,
+    opacity: 0.9
+  }).addTo(rotasLayer);
+}
+
+function gerarRotas() {
+  if (isGenerating) return;
+  isGenerating = true;
+
+  rotasLayer.clearLayers();
+  extrasLayer.clearLayers();
+
+  if (!areaLayer.getLayers().length) {
+    isGenerating = false;
+    return;
+  }
+
+  var areaGeo = areaLayer.getLayers()[0].toGeoJSON();
+  var obstaculosGeo = [];
+  obstaculosLayer.eachLayer(function (l) { obstaculosGeo.push(l.toGeoJSON()); });
+
+  var cor = document.getElementById('cor').value;
+  var angulo = parseFloat(document.getElementById('angulo').value);
+  var espacamento = parseFloat(document.getElementById('espacamento').value) || 5;
+  var margemObs = parseFloat(document.getElementById('margemObs').value) || 5;
+
+  var conexaoStep = parseInt(document.getElementById('conexaoStep').value, 10);
+  if (!Number.isFinite(conexaoStep) || conexaoStep < 1) conexaoStep = 1;
+
+  var droneColor = document.getElementById('droneColor').value || '#FF9800';
+  var sampleStepMeters = parseFloat(document.getElementById('sampleStep').value) || 1.0;
+
+  console.log('=== GERANDO ROTAS (AMOSTRAGEM) ===', { 
+    angulo, espacamento, margemObs, sampleStepMeters, conexaoStep, droneColor 
+  });
+
+  var obstacleBuffers = [];
+  obstaculosGeo.forEach(function (obs, idx) {
+    try {
+      var b = turf.buffer(obs, margemObs, { units: 'meters', steps: 64 });
+      if (b) {
+        obstacleBuffers.push(b);
+        console.log('Buffer obstáculo', idx, 'criado');
+      }
+    } catch (e) {
+      console.warn('Erro ao criar buffer para obstáculo', idx, e);
+    }
+  });
+
+  var bbox = turf.bbox(areaGeo);
+  var centro = turf.center(areaGeo).geometry.coordinates;
+  var bboxPoly = turf.bboxPolygon(bbox);
+  var bboxExpandido = turf.bbox(turf.transformScale(bboxPoly, 2.5));
+
+  var espacamentoGraus = espacamento / 111320;
+  var minX = bboxExpandido[0], maxX = bboxExpandido[2];
+  var minY = bboxExpandido[1], maxY = bboxExpandido[3];
+
+  var routeLayers = [];
+  var totalLinhas = 0;
+
+  for (var y = minY; y <= maxY; y += espacamentoGraus) {
+    totalLinhas++;
+    var linha = turf.lineString([[minX, y], [maxX, y]]);
+    if (angulo !== 0) {
+      linha = turf.transformRotate(linha, angulo, { pivot: centro });
+    }
+
+    var validSegments = segmentLineByValidity(linha, areaGeo, obstacleBuffers, sampleStepMeters);
+
+    validSegments.forEach(function (seg) {
+      var layer = addRouteSegment(seg, cor);
+      if (layer) routeLayers.push(layer);
+    });
+  }
+
+  console.log('Total de linhas processadas:', totalLinhas);
+  console.log('Total de segmentos gerados:', routeLayers.length);
+
+  if (droneMarker && routeLayers.length > 0) {
+    var droneCentro = droneMarker.getBounds().getCenter();
+    var conexoesCriadas = 0;
+
+    for (var i = 0; i < routeLayers.length; i += conexaoStep) {
+      var l = routeLayers[i];
+      var coords = l.getLatLngs();
+      if (!coords || coords.length < 2) continue;
+
+      L.polyline([
+        [droneCentro.lat, droneCentro.lng],
+        [coords[0].lat, coords[0].lng]
+      ], {
+        color: droneColor,
+        weight: 1.5,
+        dashArray: '6,6',
+        opacity: 0.85
+      }).addTo(extrasLayer);
+
+      L.polyline([
+        [droneCentro.lat, droneCentro.lng],
+        [coords[coords.length - 1].lat, coords[coords.length - 1].lng]
+      ], {
+        color: droneColor,
+        weight: 1.5,
+        dashArray: '6,6',
+        opacity: 0.85
+      }).addTo(extrasLayer);
+      
+      conexoesCriadas++;
+    }
+    
+    console.log('Conexões criadas:', conexoesCriadas);
+  }
+
+  if (routeLayers.length === 0) {
+    setStatus('⚠️ Nenhuma rota gerada. Ajuste espaçamento/margem/ângulo.');
+  } else {
+    setStatus('✈️ ' + routeLayers.length + ' rotas geradas. Conexão: 1 a cada ' + conexaoStep + '.');
+  }
+
+  isGenerating = false;
+}
+
+document.getElementById('btnGerar').onclick = function() {
+  setStatus('⏳ Calculando rotas...');
+  setTimeout(function() {
+    gerarRotas();
+  }, 50);
+};
+
+// Download KML
+document.getElementById('btnDownload').onclick = function() {
+  var pms = [];
+  var nome = document.getElementById('nomeArea').value.trim() || 'Área';
+  
+  if (areaLayer.getLayers().length) {
+    var geo = areaLayer.getLayers()[0].toGeoJSON();
+    var ha = (turf.area(geo) / 10000).toFixed(2);
+    var pts = areaLayer.getLayers()[0].getLatLngs()[0];
+    var c = pts.map(function(p) {
+      return p.lng + ',' + p.lat + ',0';
+    }).join(' ');
+    c += ' ' + pts[0].lng + ',' + pts[0].lat + ',0';
+    pms.push(`<Placemark><name>${nome} (${ha} ha)</name><Style><PolyStyle><color>33ff0000</color></PolyStyle><LineStyle><color>ffff0000</color><width>2</width></LineStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
+  }
+  
+  obstaculosLayer.eachLayer(function(l) {
+    var pts = l.getLatLngs()[0];
+    var c = pts.map(function(p) {
+      return p.lng + ',' + p.lat + ',0';
+    }).join(' ');
+    c += ' ' + pts[0].lng + ',' + pts[0].lat + ',0';
+    pms.push(`<Placemark><name>Obstáculo</name><Style><PolyStyle><color>660000ff</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
+  });
+  
+  var idx = 1;
+  rotasLayer.eachLayer(function(l) {
+    if (!l.getLatLngs || l.getLatLngs().length < 2) return;
+    var pts = l.getLatLngs();
+    var c = pts.map(function(p) {
+      return p.lng + ',' + p.lat + ',0';
+    }).join(' ');
+    pms.push(`<Placemark><name>Rota ${idx}</name><Style><LineStyle><color>ff00ff00</color><width>2</width></LineStyle></Style><LineString><tessellate>1</tessellate><coordinates>${c}</coordinates></LineString></Placemark>`);
+    idx++;
+  });
+  
+  if (idx === 1) {
+    alert('Gere as rotas primeiro!');
+    return;
+  }
+  
+  var kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>${nome}</name>\n${pms.join('\n')}\n</Document>\n</kml>`;
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }));
+  a.download = 'drone-rastro.kml';
+  a.click();
+  setStatus('⬇️ KML baixado!');
+};
+</script>
+</body>
+</html>
