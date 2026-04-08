@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Drone Rastro - Completo v5 (Aviãozinho + Minimizar)</title>
+  <title>Drone Rastro - Completo com Busca e GPS</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -24,7 +24,7 @@
       display:flex;
       flex-direction:column;
       gap:7px;
-      width:280px;
+      width:290px;
       max-height:95vh;
       overflow-y:auto;
       transition:all 0.3s ease;
@@ -54,11 +54,15 @@
     .btn-desfazer{background:#9E9E9E;color:white}
     .btn-limpar{background:#607D8B;color:white}
     .btn-download{background:#9C27B0;color:white}
+    .btn-gps{background:#00BCD4;color:white;}
+    .btn-busca{background:#FFC107;color:#333;}
     .toolbar input[type=range]{width:100%}
     .toolbar hr{margin:2px 0;border:none;border-top:1px solid #eee}
     .lbl{font-size:12px;font-weight:600;color:#555}
     .row{display:flex;gap:5px}
     .row button{flex:1}
+    .busca-container{display:flex;gap:5px;margin-bottom:5px;}
+    .busca-container input{flex:1;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:12px;}
     .status{position:absolute;bottom:20px;left:10px;background:rgba(0,0,0,0.72);color:white;padding:8px 16px;border-radius:25px;font-size:14px;z-index:1000;backdrop-filter:blur(5px);max-width:340px;}
     .area-info{position:absolute;background:rgba(255,255,255,0.9);padding:8px 14px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.18);z-index:900;text-align:center;pointer-events:auto;display:none;min-width:150px;cursor:move;border:1px solid rgba(0,0,0,0.1);}
     .area-info .ha{font-size:22px;font-weight:700;color:#1a6e1a}
@@ -74,8 +78,19 @@
 <div class="toolbar" id="toolbar">
   <button class="btn-toggle" id="btnToggleToolbar">🗕 Minimizar painel</button>
   
-  <h3>🎮 Controle de Voo v5</h3>
+  <h3>🎮 Controle de Voo v6</h3>
   
+  <!-- Busca e GPS -->
+  <div class="section-title">🔍 Localização</div>
+  <div class="busca-container">
+    <input type="text" id="searchInput" placeholder="Endereço ou local...">
+    <button class="btn-busca" id="btnBuscar">🔍</button>
+  </div>
+  <div class="row">
+    <button class="btn-gps" id="btnGPS">📍 Minha Localização</button>
+  </div>
+  
+  <hr>
   <div class="section-title">📋 Ações principais</div>
   <button class="btn-area" id="btnArea">📐 1. Mapear Área</button>
   <button class="btn-obs" id="btnObs">🌲 2. Adicionar Obstáculo</button>
@@ -87,6 +102,7 @@
     <button class="btn-limpar" id="btnLimpar">🧹 Limpar</button>
   </div>
   
+  <!-- Restante das configurações (mantidas iguais) -->
   <hr>
   <div class="section-title">⚙️ Rotas</div>
   <label>Ângulo: <input type="range" id="angulo" min="0" max="179" value="0"> <span id="anguloVal">0°</span></label>
@@ -119,40 +135,41 @@
   <div class="ha" id="areaHa">0 ha</div>
   <div class="nome" id="areaNome"></div>
 </div>
-<div class="status" id="status">🎯 Clique em "Mapear Área" para começar.</div>
+<div class="status" id="status">🎯 Pronto. Use a busca ou GPS para navegar.</div>
 <div class="legenda">
   <b>Legenda:</b><br>
   <span style="color:#2196F3">■</span> Área mapeada<br>
   <span style="color:#f44336">■</span> Obstáculos<br>
   <span style="color:#FF9800">✈️</span> Drone<br>
-  <span style="color:#00ff00">━</span> Rotas
+  <span style="color:#00ff00">━</span> Rotas<br>
+  <span style="color:#00BCD4">●</span> Sua localização
 </div>
 <div id="map"></div>
 
 <script>
-// Inicialização do mapa
+// --- Inicialização do mapa ---
 var map = L.map('map', { doubleClickZoom: false }).setView([-22.33, -50.41], 18);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Esri'
 }).addTo(map);
 
-// Camadas
+// --- Camadas ---
 var areaLayer = new L.FeatureGroup().addTo(map);
 var obstaculosLayer = new L.FeatureGroup().addTo(map);
 var rotasLayer = L.layerGroup().addTo(map);
 var extrasLayer = L.layerGroup().addTo(map);
 var droneMarker = null;
+var locationMarker = null; // marcador de GPS/busca
 
-// Histórico
+// --- Histórico e handlers de desenho ---
 var historico = { areas: [], obstaculos: [] };
 var drawAreaHandler = null, drawObsHandler = null;
 var posicionandoDrone = false;
 
-// Estilos
+// --- Estilos ---
 var estiloArea = { color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.15, weight: 3 };
 var estiloObs = { color: '#f44336', fillColor: '#f44336', fillOpacity: 0.3, weight: 3 };
 
-// Flag para evitar loops
 var isGenerating = false;
 
 function setStatus(m) { 
@@ -165,41 +182,87 @@ function setStatus(m) {
   var toolbar = document.getElementById('toolbar');
   var btn = document.getElementById('btnToggleToolbar');
   if (!toolbar || !btn) return;
-
   btn.onclick = function () {
     var isMin = toolbar.classList.toggle('minimized');
     btn.textContent = isMin ? '🗖 Expandir painel' : '🗕 Minimizar painel';
   };
 })();
 
-// ====================== DRONE EM FORMATO DE AVIÃOZINHO ======================
+// ====================== BUSCA DE ENDEREÇOS (Nominatim) ======================
+document.getElementById('btnBuscar').onclick = function() {
+  var query = document.getElementById('searchInput').value.trim();
+  if (!query) {
+    alert('Digite um endereço ou local.');
+    return;
+  }
+  setStatus('🔍 Buscando...');
+  var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query);
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      if (data.length === 0) {
+        alert('Local não encontrado.');
+        setStatus('⚠️ Local não encontrado.');
+        return;
+      }
+      var lat = parseFloat(data[0].lat);
+      var lon = parseFloat(data[0].lon);
+      map.setView([lat, lon], 18);
+      if (locationMarker) map.removeLayer(locationMarker);
+      locationMarker = L.marker([lat, lon], {
+        icon: L.divIcon({className: 'custom-location-marker', html: '📍', iconSize: [20,20]})
+      }).addTo(map).bindPopup(data[0].display_name).openPopup();
+      setStatus('📍 ' + data[0].display_name);
+    })
+    .catch(err => {
+      alert('Erro na busca: ' + err.message);
+      setStatus('❌ Erro na busca.');
+    });
+};
+
+// ====================== LOCALIZAÇÃO GPS ======================
+document.getElementById('btnGPS').onclick = function() {
+  if (!navigator.geolocation) {
+    alert('Geolocalização não suportada pelo navegador.');
+    return;
+  }
+  setStatus('📍 Obtendo localização...');
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      var lat = pos.coords.latitude;
+      var lng = pos.coords.longitude;
+      map.setView([lat, lng], 18);
+      if (locationMarker) map.removeLayer(locationMarker);
+      locationMarker = L.circleMarker([lat, lng], {
+        radius: 8,
+        color: '#00BCD4',
+        fillColor: '#00BCD4',
+        fillOpacity: 0.5,
+        weight: 2
+      }).addTo(map).bindPopup('Sua localização').openPopup();
+      setStatus('📍 Localização atual: ' + lat.toFixed(5) + ', ' + lng.toFixed(5));
+    },
+    function(err) {
+      alert('Erro ao obter localização: ' + err.message);
+      setStatus('❌ Localização não disponível.');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+};
+
+// ====================== DRONE AVIÃOZINHO (mantido) ======================
 function buildDronePlaneLatLngs(lat, lng, sizeDeg, headingDeg) {
-  // Formato de aviãozinho de papel (seta aerodinâmica)
   var pts = [
-    [ 0.00,  1.20],  // ponta (nariz)
-    [ 0.35,  0.30],  // asa direita frente
-    [ 0.15,  0.10],  // corpo direito
-    [ 0.30, -0.50],  // asa direita trás
-    [ 0.10, -0.70],  // cauda direita
-    [ 0.00, -0.50],  // rabo centro
-    [-0.10, -0.70],  // cauda esquerda
-    [-0.30, -0.50],  // asa esquerda trás
-    [-0.15,  0.10],  // corpo esquerdo
-    [-0.35,  0.30]   // asa esquerda frente
+    [ 0.00,  1.20], [ 0.35,  0.30], [ 0.15,  0.10], [ 0.30, -0.50], [ 0.10, -0.70],
+    [ 0.00, -0.50], [-0.10, -0.70], [-0.30, -0.50], [-0.15,  0.10], [-0.35,  0.30]
   ];
-
   var rad = (headingDeg || 0) * Math.PI / 180;
-  var cos = Math.cos(rad);
-  var sin = Math.sin(rad);
-
+  var cos = Math.cos(rad), sin = Math.sin(rad);
   return pts.map(function (p) {
     var x = p[0] * sizeDeg;
     var y = p[1] * sizeDeg;
-
-    // rotação 2D
     var xr = x * cos - y * sin;
     var yr = x * sin + y * cos;
-
     return [lat + yr, lng + xr];
   });
 }
