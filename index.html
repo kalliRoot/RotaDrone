@@ -161,7 +161,7 @@ var obstaculosLayer = new L.FeatureGroup().addTo(map);
 var rotasLayer = L.layerGroup().addTo(map);
 var extrasLayer = L.layerGroup().addTo(map);
 var droneMarker = null;
-var locationMarker = null; // marcador de GPS/busca
+var locationMarker = null;
 
 // --- Histórico e handlers de desenho ---
 var historico = { areas: [], obstaculos: [] };
@@ -174,10 +174,18 @@ var estiloArea = { color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.15, we
 var estiloObs = { color: '#f44336', fillColor: '#f44336', fillOpacity: 0.3, weight: 3 };
 
 var isGenerating = false;
+var regenerateTimer = null;
 
 function setStatus(m) { 
   document.getElementById('status').innerHTML = m; 
   console.log('Status:', m);
+}
+
+function scheduleGerarRotas(delayMs) {
+  clearTimeout(regenerateTimer);
+  regenerateTimer = setTimeout(function () {
+    if (areaLayer.getLayers().length > 0 && !isGenerating) gerarRotas();
+  }, delayMs || 120);
 }
 
 // ====================== MINIMIZAR/EXPANDIR PAINEL ======================
@@ -191,7 +199,7 @@ function setStatus(m) {
   };
 })();
 
-// ====================== BUSCA DE ENDEREÇOS (Nominatim) ======================
+// ====================== BUSCA DE ENDEREÇOS ======================
 document.getElementById('btnBuscar').onclick = function() {
   var query = document.getElementById('searchInput').value.trim();
   if (!query) {
@@ -253,7 +261,7 @@ document.getElementById('btnGPS').onclick = function() {
   );
 };
 
-// ====================== DRONE AVIÃOZINHO (mantido) ======================
+// ====================== DRONE AVIÃOZINHO ======================
 function buildDronePlaneLatLngs(lat, lng, sizeDeg, headingDeg) {
   var pts = [
     [ 0.00,  1.20], [ 0.35,  0.30], [ 0.15,  0.10], [ 0.30, -0.50], [ 0.10, -0.70],
@@ -270,7 +278,6 @@ function buildDronePlaneLatLngs(lat, lng, sizeDeg, headingDeg) {
   });
 }
 
-// Atualizar painel de hectares
 function atualizarInfoArea(reposition = true) {
   var layers = areaLayer.getLayers();
   if (!layers.length) {
@@ -321,45 +328,38 @@ document.addEventListener('mouseup', function() {
   }
 });
 
-// Tamanho da info
 document.getElementById('infoSize').oninput = function() {
   var val = this.value;
   document.getElementById('infoSizeVal').innerText = val + 'px';
   document.getElementById('areaHa').style.fontSize = val + 'px';
 };
 
-// Ângulo - ATUALIZAÇÃO AUTOMÁTICA
+// Controles com atualização automática
 document.getElementById('angulo').oninput = function() {
   document.getElementById('anguloVal').innerText = this.value + '°';
-  if (areaLayer.getLayers().length > 0) gerarRotas();
+  scheduleGerarRotas(180);
 };
 
-// Espaçamento - ATUALIZAÇÃO AUTOMÁTICA
 document.getElementById('espacamento').oninput = function() {
-  if (areaLayer.getLayers().length > 0) gerarRotas();
+  scheduleGerarRotas(120);
 };
 
-// Cor da rota - ATUALIZAÇÃO AUTOMÁTICA
 document.getElementById('cor').oninput = function() {
-  if (areaLayer.getLayers().length > 0 && rotasLayer.getLayers().length > 0) gerarRotas();
+  if (areaLayer.getLayers().length > 0 && rotasLayer.getLayers().length > 0) scheduleGerarRotas(50);
 };
 
-// Margem - ATUALIZAÇÃO AUTOMÁTICA
 document.getElementById('margemObs').oninput = function() {
-  if (areaLayer.getLayers().length > 0) gerarRotas();
+  scheduleGerarRotas(120);
 };
 
-// Precisão amostragem - ATUALIZAÇÃO AUTOMÁTICA
 document.getElementById('sampleStep').oninput = function() {
-  if (areaLayer.getLayers().length > 0) gerarRotas();
+  scheduleGerarRotas(120);
 };
 
-// Conexão step - ATUALIZAÇÃO AUTOMÁTICA
 document.getElementById('conexaoStep').oninput = function() {
-  if (areaLayer.getLayers().length > 0 && rotasLayer.getLayers().length > 0) gerarRotas();
+  if (areaLayer.getLayers().length > 0 && rotasLayer.getLayers().length > 0) scheduleGerarRotas(50);
 };
 
-// Rotação do drone
 document.getElementById('droneHeading').oninput = function() {
   document.getElementById('headingVal').innerText = this.value + '°';
   if (!droneMarker) return;
@@ -367,12 +367,11 @@ document.getElementById('droneHeading').oninput = function() {
   criarDrone(c.lat, c.lng);
 };
 
-// Cor do drone - ATUALIZAÇÃO AUTOMÁTICA
 document.getElementById('droneColor').oninput = function() {
   if (!droneMarker) return;
   var c = droneMarker.getBounds().getCenter();
   criarDrone(c.lat, c.lng);
-  if (rotasLayer.getLayers().length > 0) gerarRotas();
+  if (rotasLayer.getLayers().length > 0) scheduleGerarRotas(50);
 };
 
 // Botões principais
@@ -454,12 +453,11 @@ document.getElementById('btnEditarPontos').onclick = function() {
     editandoPontos = false;
     this.textContent = '🧷 4. Editar Pontos';
     atualizarInfoArea(true);
-    if (rotasLayer.getLayers().length > 0) gerarRotas();
+    if (rotasLayer.getLayers().length > 0) scheduleGerarRotas(50);
     setStatus('✅ Edição concluída.');
   }
 };
 
-// Criar drone (aviãozinho)
 function criarDrone(lat, lng) {
   if (droneMarker) map.removeLayer(droneMarker);
 
@@ -481,11 +479,10 @@ function criarDrone(lat, lng) {
   setStatus('✅ Drone posicionado. Pode arrastar para ajustar.');
 
   if (rotasLayer.getLayers().length > 0) {
-    gerarRotas();
+    scheduleGerarRotas(50);
   }
 }
 
-// Arrastar drone
 function ativarDrag(poly) {
   var dragging = false, last;
   
@@ -511,13 +508,12 @@ function ativarDrag(poly) {
       dragging = false;
       map.dragging.enable();
       if (rotasLayer.getLayers().length > 0) {
-        gerarRotas();
+        scheduleGerarRotas(50);
       }
     }
   });
 }
 
-// Clique para drone
 map.on('click', function(e) {
   if (!posicionandoDrone) return;
   criarDrone(e.latlng.lat, e.latlng.lng);
@@ -525,7 +521,6 @@ map.on('click', function(e) {
   map.getContainer().style.cursor = '';
 });
 
-// Evento de criação de geometria
 map.on(L.Draw.Event.CREATED, function(e) {
   var layer = e.layer;
   
@@ -538,23 +533,20 @@ map.on(L.Draw.Event.CREATED, function(e) {
     drawAreaHandler.disable();
     atualizarInfoArea(true);
     setStatus('✅ Área mapeada! Agora adicione obstáculos (opcional).');
+    scheduleGerarRotas(100);
   } 
   else if (drawObsHandler && drawObsHandler.enabled()) {
     obstaculosLayer.addLayer(layer);
     historico.obstaculos.push(layer);
     drawObsHandler.disable();
     setStatus('🌲 Obstáculo adicionado.');
-    
-    if (rotasLayer.getLayers().length > 0) {
-      gerarRotas();
-    }
+    scheduleGerarRotas(100);
   }
 });
 
-// Evento de edição/deleção
 map.on(L.Draw.Event.EDITED, function() {
   atualizarInfoArea(true);
-  if (rotasLayer.getLayers().length > 0) gerarRotas();
+  scheduleGerarRotas(100);
 });
 
 map.on(L.Draw.Event.DELETED, function() {
@@ -563,10 +555,9 @@ map.on(L.Draw.Event.DELETED, function() {
     rotasLayer.clearLayers();
     extrasLayer.clearLayers();
   }
-  if (rotasLayer.getLayers().length > 0) gerarRotas();
+  scheduleGerarRotas(100);
 });
 
-// Desfazer
 document.getElementById('btnDesfazer').onclick = function() {
   if (drawObsHandler) drawObsHandler.disable();
   if (drawAreaHandler) drawAreaHandler.disable();
@@ -575,7 +566,7 @@ document.getElementById('btnDesfazer').onclick = function() {
     var ultimo = historico.obstaculos.pop();
     obstaculosLayer.removeLayer(ultimo);
     setStatus('↩️ Último obstáculo removido.');
-    if (rotasLayer.getLayers().length > 0) gerarRotas();
+    scheduleGerarRotas(100);
   } 
   else if (historico.areas.length) {
     areaLayer.clearLayers();
@@ -583,14 +574,13 @@ document.getElementById('btnDesfazer').onclick = function() {
     areaLayer.addLayer(anterior);
     atualizarInfoArea(true);
     setStatus('↩️ Área anterior restaurada.');
-    if (rotasLayer.getLayers().length > 0) gerarRotas();
+    scheduleGerarRotas(100);
   }
   else {
     alert('Nada para desfazer.');
   }
 };
 
-// Limpar tudo
 document.getElementById('btnLimpar').onclick = function() {
   areaLayer.clearLayers();
   obstaculosLayer.clearLayers();
@@ -605,77 +595,37 @@ document.getElementById('btnLimpar').onclick = function() {
   }
   document.getElementById('areaInfo').style.display = 'none';
   setStatus('🧹 Tudo limpo. Comece mapeando a área.');
+  clearTimeout(regenerateTimer);
 };
 
-// Ajustar tamanho do drone
 document.getElementById('droneSize').oninput = function() {
   if (!droneMarker) return;
   var center = droneMarker.getBounds().getCenter();
   criarDrone(center.lat, center.lng);
 };
 
-// ====================== FUNÇÕES DE GERAÇÃO DE ROTAS (AMOSTRAGEM) ======================
+// ====================== FUNÇÕES DE GERAÇÃO DE ROTAS ======================
 
 function pointIsValid(coord, areaGeo, obstacleBuffers) {
   var pt = turf.point(coord);
-
   if (!turf.booleanPointInPolygon(pt, areaGeo)) return false;
-
   for (var i = 0; i < obstacleBuffers.length; i++) {
     if (turf.booleanPointInPolygon(pt, obstacleBuffers[i])) return false;
   }
-
   return true;
-}
-
-function isDirectSegmentValid(coordA, coordB, areaGeo, obstacleBuffers, sampleStepMeters) {
-  var line = turf.lineString([coordA, coordB]);
-  var chunks = segmentLineByValidity(line, areaGeo, obstacleBuffers, sampleStepMeters);
-  if (!chunks.length) return false;
-  var totalValidKm = chunks.reduce(function (acc, c) {
-    return acc + turf.length(c, { units: 'kilometers' });
-  }, 0);
-  var fullKm = turf.length(line, { units: 'kilometers' });
-  if (fullKm === 0) return true;
-  return Math.abs(totalValidKm - fullKm) < 0.00005;
-}
-
-function findReachablePointOnRoute(routeCoords, startCoord, areaGeo, obstacleBuffers, sampleStepMeters) {
-  if (!routeCoords || routeCoords.length < 2) return null;
-  var best = null;
-  var totalSamples = Math.max(15, routeCoords.length * 2);
-  var line = turf.lineString(routeCoords);
-  var totalKm = turf.length(line, { units: 'kilometers' });
-  if (totalKm === 0) return routeCoords[0];
-
-  for (var i = 0; i <= totalSamples; i++) {
-    var p = turf.along(line, (totalKm * i) / totalSamples, { units: 'kilometers' }).geometry.coordinates;
-    if (!pointIsValid(p, areaGeo, obstacleBuffers)) continue;
-    if (!isDirectSegmentValid(startCoord, p, areaGeo, obstacleBuffers, sampleStepMeters)) continue;
-
-    var d = turf.distance(turf.point(startCoord), turf.point(p), { units: 'meters' });
-    if (!best || d < best.distance) {
-      best = { coord: p, distance: d };
-    }
-  }
-
-  return best ? best.coord : null;
 }
 
 function segmentLineByValidity(line, areaGeo, obstacleBuffers, sampleStepMeters) {
   var chunks = [];
   var current = [];
-
   var totalKm = turf.length(line, { units: 'kilometers' });
   if (totalKm === 0) return chunks;
-
   var stepKm = sampleStepMeters / 1000;
 
   for (var d = 0; d <= totalKm + 1e-9; d += stepKm) {
     var p = turf.along(line, Math.min(d, totalKm), { units: 'kilometers' });
     var coord = p.geometry.coordinates;
     var ok = pointIsValid(coord, areaGeo, obstacleBuffers);
-
     if (ok) {
       current.push(coord);
     } else {
@@ -683,181 +633,122 @@ function segmentLineByValidity(line, areaGeo, obstacleBuffers, sampleStepMeters)
       current = [];
     }
   }
-
   if (current.length >= 2) chunks.push(turf.lineString(current));
-
   return chunks;
-}
-
-function addRouteSegment(segment, cor) {
-  var coords = segment.geometry && segment.geometry.coordinates;
-  if (!coords || coords.length < 2) return null;
-
-  var latlngs = coords.map(function (c) { return [c[1], c[0]]; });
-
-  return L.polyline(latlngs, {
-    color: cor,
-    weight: 2.5,
-    opacity: 0.9
-  }).addTo(rotasLayer);
 }
 
 function gerarRotas() {
   if (isGenerating) return;
   isGenerating = true;
+  setStatus('⏳ Calculando rotas...');
 
-  rotasLayer.clearLayers();
-  extrasLayer.clearLayers();
-
-  if (!areaLayer.getLayers().length) {
-    isGenerating = false;
-    return;
-  }
-
-  var areaGeo = areaLayer.getLayers()[0].toGeoJSON();
-  var obstaculosGeo = [];
-  obstaculosLayer.eachLayer(function (l) { obstaculosGeo.push(l.toGeoJSON()); });
-
-  var cor = document.getElementById('cor').value;
-  var angulo = parseFloat(document.getElementById('angulo').value);
-  var espacamento = parseFloat(document.getElementById('espacamento').value) || 5;
-  var margemObs = parseFloat(document.getElementById('margemObs').value) || 5;
-
-  var conexaoStep = parseInt(document.getElementById('conexaoStep').value, 10);
-  if (!Number.isFinite(conexaoStep) || conexaoStep < 1) conexaoStep = 1;
-
-  var droneColor = document.getElementById('droneColor').value || '#FF9800';
-  var sampleStepMeters = parseFloat(document.getElementById('sampleStep').value) || 1.0;
-
-  console.log('=== GERANDO ROTAS (AMOSTRAGEM) ===', { 
-    angulo, espacamento, margemObs, sampleStepMeters, conexaoStep, droneColor 
-  });
-
-  var obstacleBuffers = [];
-  obstaculosGeo.forEach(function (obs, idx) {
+  setTimeout(function() {
     try {
-      var b = turf.buffer(obs, margemObs, { units: 'meters', steps: 64 });
-      if (b) {
-        obstacleBuffers.push(b);
-        console.log('Buffer obstáculo', idx, 'criado');
-      }
-    } catch (e) {
-      console.warn('Erro ao criar buffer para obstáculo', idx, e);
-    }
-  });
+      rotasLayer.clearLayers();
+      extrasLayer.clearLayers();
 
-  var bbox = turf.bbox(areaGeo);
-  var centro = turf.center(areaGeo).geometry.coordinates;
-  var bboxPoly = turf.bboxPolygon(bbox);
-  var bboxExpandido = turf.bbox(turf.transformScale(bboxPoly, 2.5));
-
-  var espacamentoGraus = espacamento / 111320;
-  var minX = bboxExpandido[0], maxX = bboxExpandido[2];
-  var minY = bboxExpandido[1], maxY = bboxExpandido[3];
-
-  var routeLayers = [];
-  var routeCoordsCollection = [];
-  var totalLinhas = 0;
-
-  for (var y = minY; y <= maxY; y += espacamentoGraus) {
-    totalLinhas++;
-    var linha = turf.lineString([[minX, y], [maxX, y]]);
-    if (angulo !== 0) {
-      linha = turf.transformRotate(linha, angulo, { pivot: centro });
-    }
-
-    var validSegments = segmentLineByValidity(linha, areaGeo, obstacleBuffers, sampleStepMeters);
-
-    validSegments.forEach(function (seg) {
-      var layer = addRouteSegment(seg, cor);
-      if (layer) {
-        routeLayers.push(layer);
-        routeCoordsCollection.push(seg.geometry.coordinates);
-      }
-    });
-  }
-
-  console.log('Total de linhas processadas:', totalLinhas);
-  console.log('Total de segmentos gerados:', routeLayers.length);
-
-  if (routeCoordsCollection.length > 0) {
-    var linhaUnicaCoords = [];
-
-    routeCoordsCollection.forEach(function (coords, idx) {
-      if (!coords || coords.length < 2) return;
-
-      var rotaAtual = (idx % 2 === 1) ? coords.slice().reverse() : coords.slice();
-
-      if (linhaUnicaCoords.length === 0) {
-        linhaUnicaCoords = linhaUnicaCoords.concat(rotaAtual);
+      if (!areaLayer.getLayers().length) {
+        isGenerating = false;
+        setStatus('⚠️ Nenhuma área para gerar rotas.');
         return;
       }
 
-      var ultimo = linhaUnicaCoords[linhaUnicaCoords.length - 1];
-      var alvo = findReachablePointOnRoute(rotaAtual, ultimo, areaGeo, obstacleBuffers, sampleStepMeters);
-      if (!alvo) return;
+      var areaGeo = areaLayer.getLayers()[0].toGeoJSON();
+      var obstaculosGeo = [];
+      obstaculosLayer.eachLayer(function (l) { obstaculosGeo.push(l.toGeoJSON()); });
 
-      var nearest = turf.nearestPointOnLine(turf.lineString(rotaAtual), turf.point(alvo), { units: 'meters' });
-      var split = Number.isInteger(nearest.properties.index) ? nearest.properties.index : 0;
-      rotaAtual = rotaAtual.slice(split);
-      rotaAtual[0] = alvo;
+      var cor = document.getElementById('cor').value;
+      var angulo = parseFloat(document.getElementById('angulo').value);
+      var espacamento = parseFloat(document.getElementById('espacamento').value) || 5;
+      var margemObs = parseFloat(document.getElementById('margemObs').value) || 5;
+      var conexaoStep = parseInt(document.getElementById('conexaoStep').value, 10) || 1;
+      var sampleStepMeters = parseFloat(document.getElementById('sampleStep').value) || 1.0;
 
-      linhaUnicaCoords.push(alvo);
-      linhaUnicaCoords = linhaUnicaCoords.concat(rotaAtual);
-    });
+      var obstacleBuffers = [];
+      obstaculosGeo.forEach(function (obs, idx) {
+        try {
+          var b = turf.buffer(obs, margemObs, { units: 'meters', steps: 32 });
+          if (b) obstacleBuffers.push(b);
+        } catch (e) {
+          console.warn('Erro ao criar buffer:', e);
+        }
+      });
 
-    if (linhaUnicaCoords.length >= 2) {
-      rotasLayer.clearLayers();
-      var linhaUnica = L.polyline(linhaUnicaCoords.map(function (c) { return [c[1], c[0]]; }), {
-        color: cor,
-        weight: 3,
-        opacity: 0.95
-      }).addTo(rotasLayer);
-      routeLayers = [linhaUnica];
-    }
-  }
-
-  if (droneMarker && routeCoordsCollection.length > 0) {
-    var droneCentro = droneMarker.getBounds().getCenter();
-    var conexoesCriadas = 0;
-    var droneCoord = [droneCentro.lng, droneCentro.lat];
-
-    for (var i = 0; i < routeCoordsCollection.length; i += conexaoStep) {
-      var coords = routeCoordsCollection[i];
-      if (!coords || coords.length < 2) continue;
-      var alvoSeguro = findReachablePointOnRoute(coords, droneCoord, areaGeo, obstacleBuffers, sampleStepMeters);
-      if (!alvoSeguro) continue;
-
-      L.polyline([
-        [droneCentro.lat, droneCentro.lng],
-        [alvoSeguro[1], alvoSeguro[0]]
-      ], {
-        color: droneColor,
-        weight: 1.5,
-        dashArray: '6,6',
-        opacity: 0.85
-      }).addTo(extrasLayer);
+      var bbox = turf.bbox(areaGeo);
+      var centro = turf.center(areaGeo).geometry.coordinates;
+      var espacamentoGraus = espacamento / 111320;
       
-      conexoesCriadas++;
+      // Expand bounding box slightly
+      var minX = bbox[0] - espacamentoGraus * 2;
+      var maxX = bbox[2] + espacamentoGraus * 2;
+      var minY = bbox[1] - espacamentoGraus;
+      var maxY = bbox[3] + espacamentoGraus;
+
+      var routeCount = 0;
+
+      // Generate parallel lines
+      for (var y = minY; y <= maxY; y += espacamentoGraus) {
+        var linha = turf.lineString([[minX, y], [maxX, y]]);
+        if (angulo !== 0) {
+          linha = turf.transformRotate(linha, angulo, { pivot: centro });
+        }
+
+        var validSegments = segmentLineByValidity(linha, areaGeo, obstacleBuffers, sampleStepMeters);
+        
+        validSegments.forEach(function (seg) {
+          var coords = seg.geometry.coordinates;
+          if (coords && coords.length >= 2) {
+            var latlngs = coords.map(function (c) { return [c[1], c[0]]; });
+            L.polyline(latlngs, {
+              color: cor,
+              weight: 2.5,
+              opacity: 0.9
+            }).addTo(rotasLayer);
+            routeCount++;
+          }
+        });
+      }
+
+      // Connect drone to routes if exists
+      if (droneMarker && routeCount > 0) {
+        var droneCentro = droneMarker.getBounds().getCenter();
+        var droneColor = document.getElementById('droneColor').value || '#FF9800';
+        var connectionCount = 0;
+        
+        rotasLayer.eachLayer(function(layer, index) {
+          if (index % conexaoStep === 0 && layer.getLatLngs && layer.getLatLngs().length >= 2) {
+            var firstPoint = layer.getLatLngs()[0];
+            L.polyline([
+              [droneCentro.lat, droneCentro.lng],
+              [firstPoint.lat, firstPoint.lng]
+            ], {
+              color: droneColor,
+              weight: 1.5,
+              dashArray: '6,6',
+              opacity: 0.85
+            }).addTo(extrasLayer);
+            connectionCount++;
+          }
+        });
+        console.log('Conexões criadas:', connectionCount);
+      }
+
+      setStatus('✈️ ' + routeCount + ' rotas geradas. Conexão: 1 a cada ' + conexaoStep + '.');
+    } catch (error) {
+      console.error('Erro ao gerar rotas:', error);
+      setStatus('❌ Erro ao gerar rotas. Verifique o console.');
+    } finally {
+      isGenerating = false;
     }
-    
-    console.log('Conexões criadas:', conexoesCriadas);
-  }
-
-  if (routeLayers.length === 0) {
-    setStatus('⚠️ Nenhuma rota gerada. Ajuste espaçamento/margem/ângulo.');
-  } else {
-    setStatus('✈️ ' + routeLayers.length + ' rotas geradas. Conexão: 1 a cada ' + conexaoStep + '.');
-  }
-
-  isGenerating = false;
+  }, 10);
 }
 
 document.getElementById('btnGerar').onclick = function() {
-  setStatus('⏳ Calculando rotas...');
-  setTimeout(function() {
-    gerarRotas();
-  }, 50);
+  if (areaLayer.getLayers().length === 0) {
+    alert('⚠️ Mapeie uma área primeiro!');
+    return;
+  }
+  gerarRotas();
 };
 
 // Download KML
