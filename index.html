@@ -50,6 +50,7 @@
     .btn-area{background:#2196F3;color:white}
     .btn-obs{background:#f44336;color:white}
     .btn-drone{background:#FF9800;color:white}
+    .btn-editar{background:#673AB7;color:white}
     .btn-gerar{background:#4CAF50;color:white;font-size:15px;padding:11px}
     .btn-desfazer{background:#9E9E9E;color:white}
     .btn-limpar{background:#607D8B;color:white}
@@ -78,7 +79,7 @@
 <div class="toolbar" id="toolbar">
   <button class="btn-toggle" id="btnToggleToolbar">🗕 Minimizar painel</button>
   
-  <h3>🎮 Controle de Voo v6</h3>
+  <h3>🎮 Controle de Voo v7</h3>
   
   <!-- Busca e GPS -->
   <div class="section-title">🔍 Localização</div>
@@ -95,6 +96,7 @@
   <button class="btn-area" id="btnArea">📐 1. Mapear Área</button>
   <button class="btn-obs" id="btnObs">🌲 2. Adicionar Obstáculo</button>
   <button class="btn-drone" id="btnDrone">📍 3. Posicionar Drone</button>
+  <button class="btn-editar" id="btnEditarPontos">🧷 4. Editar Pontos</button>
   
   <hr>
   <div class="row">
@@ -165,6 +167,7 @@ var locationMarker = null; // marcador de GPS/busca
 var historico = { areas: [], obstaculos: [] };
 var drawAreaHandler = null, drawObsHandler = null;
 var posicionandoDrone = false;
+var editandoPontos = false;
 
 // --- Estilos ---
 var estiloArea = { color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.15, weight: 3 };
@@ -376,6 +379,14 @@ document.getElementById('droneColor').oninput = function() {
 document.getElementById('btnArea').onclick = function() {
   if (drawObsHandler) drawObsHandler.disable();
   posicionandoDrone = false;
+  if (editandoPontos) {
+    var btn = document.getElementById('btnEditarPontos');
+    if (areaLayer.getLayers().length) {
+      areaLayer.getLayers()[0].editing.disable();
+      editandoPontos = false;
+      btn.textContent = '🧷 4. Editar Pontos';
+    }
+  }
   drawAreaHandler = new L.Draw.Polygon(map, { 
     shapeOptions: estiloArea, 
     allowIntersection: false, 
@@ -392,6 +403,14 @@ document.getElementById('btnObs').onclick = function() {
   }
   if (drawAreaHandler) drawAreaHandler.disable();
   posicionandoDrone = false;
+  if (editandoPontos) {
+    var btn = document.getElementById('btnEditarPontos');
+    if (areaLayer.getLayers().length) {
+      areaLayer.getLayers()[0].editing.disable();
+      editandoPontos = false;
+      btn.textContent = '🧷 4. Editar Pontos';
+    }
+  }
   drawObsHandler = new L.Draw.Polygon(map, { shapeOptions: estiloObs });
   drawObsHandler.enable();
   setStatus('🌲 Desenhe um obstáculo dentro da área.');
@@ -400,9 +419,44 @@ document.getElementById('btnObs').onclick = function() {
 document.getElementById('btnDrone').onclick = function() {
   if (drawAreaHandler) drawAreaHandler.disable();
   if (drawObsHandler) drawObsHandler.disable();
+  if (editandoPontos) {
+    var btn = document.getElementById('btnEditarPontos');
+    if (areaLayer.getLayers().length) {
+      areaLayer.getLayers()[0].editing.disable();
+      editandoPontos = false;
+      btn.textContent = '🧷 4. Editar Pontos';
+    }
+  }
   posicionandoDrone = true;
   map.getContainer().style.cursor = 'crosshair';
   setStatus('📍 Clique no mapa para posicionar o drone.');
+};
+
+document.getElementById('btnEditarPontos').onclick = function() {
+  if (!areaLayer.getLayers().length) {
+    alert('Mapeie uma área primeiro.');
+    return;
+  }
+
+  if (drawAreaHandler) drawAreaHandler.disable();
+  if (drawObsHandler) drawObsHandler.disable();
+  posicionandoDrone = false;
+  map.getContainer().style.cursor = '';
+
+  var area = areaLayer.getLayers()[0];
+  if (!editandoPontos) {
+    area.editing.enable();
+    editandoPontos = true;
+    this.textContent = '✅ Concluir edição';
+    setStatus('🧷 Edição ativa: arraste os pontos da borda.');
+  } else {
+    area.editing.disable();
+    editandoPontos = false;
+    this.textContent = '🧷 4. Editar Pontos';
+    atualizarInfoArea(true);
+    if (rotasLayer.getLayers().length > 0) gerarRotas();
+    setStatus('✅ Edição concluída.');
+  }
 };
 
 // Criar drone (aviãozinho)
@@ -545,6 +599,10 @@ document.getElementById('btnLimpar').onclick = function() {
   if (droneMarker) map.removeLayer(droneMarker);
   droneMarker = null;
   historico = { areas: [], obstaculos: [] };
+  if (editandoPontos) {
+    editandoPontos = false;
+    document.getElementById('btnEditarPontos').textContent = '🧷 4. Editar Pontos';
+  }
   document.getElementById('areaInfo').style.display = 'none';
   setStatus('🧹 Tudo limpo. Comece mapeando a área.');
 };
@@ -568,6 +626,40 @@ function pointIsValid(coord, areaGeo, obstacleBuffers) {
   }
 
   return true;
+}
+
+function isDirectSegmentValid(coordA, coordB, areaGeo, obstacleBuffers, sampleStepMeters) {
+  var line = turf.lineString([coordA, coordB]);
+  var chunks = segmentLineByValidity(line, areaGeo, obstacleBuffers, sampleStepMeters);
+  if (!chunks.length) return false;
+  var totalValidKm = chunks.reduce(function (acc, c) {
+    return acc + turf.length(c, { units: 'kilometers' });
+  }, 0);
+  var fullKm = turf.length(line, { units: 'kilometers' });
+  if (fullKm === 0) return true;
+  return Math.abs(totalValidKm - fullKm) < 0.00005;
+}
+
+function findReachablePointOnRoute(routeCoords, startCoord, areaGeo, obstacleBuffers, sampleStepMeters) {
+  if (!routeCoords || routeCoords.length < 2) return null;
+  var best = null;
+  var totalSamples = Math.max(15, routeCoords.length * 2);
+  var line = turf.lineString(routeCoords);
+  var totalKm = turf.length(line, { units: 'kilometers' });
+  if (totalKm === 0) return routeCoords[0];
+
+  for (var i = 0; i <= totalSamples; i++) {
+    var p = turf.along(line, (totalKm * i) / totalSamples, { units: 'kilometers' }).geometry.coordinates;
+    if (!pointIsValid(p, areaGeo, obstacleBuffers)) continue;
+    if (!isDirectSegmentValid(startCoord, p, areaGeo, obstacleBuffers, sampleStepMeters)) continue;
+
+    var d = turf.distance(turf.point(startCoord), turf.point(p), { units: 'meters' });
+    if (!best || d < best.distance) {
+      best = { coord: p, distance: d };
+    }
+  }
+
+  return best ? best.coord : null;
 }
 
 function segmentLineByValidity(line, areaGeo, obstacleBuffers, sampleStepMeters) {
@@ -664,6 +756,7 @@ function gerarRotas() {
   var minY = bboxExpandido[1], maxY = bboxExpandido[3];
 
   var routeLayers = [];
+  var routeCoordsCollection = [];
   var totalLinhas = 0;
 
   for (var y = minY; y <= maxY; y += espacamentoGraus) {
@@ -677,35 +770,67 @@ function gerarRotas() {
 
     validSegments.forEach(function (seg) {
       var layer = addRouteSegment(seg, cor);
-      if (layer) routeLayers.push(layer);
+      if (layer) {
+        routeLayers.push(layer);
+        routeCoordsCollection.push(seg.geometry.coordinates);
+      }
     });
   }
 
   console.log('Total de linhas processadas:', totalLinhas);
   console.log('Total de segmentos gerados:', routeLayers.length);
 
-  if (droneMarker && routeLayers.length > 0) {
+  if (routeCoordsCollection.length > 0) {
+    var linhaUnicaCoords = [];
+
+    routeCoordsCollection.forEach(function (coords, idx) {
+      if (!coords || coords.length < 2) return;
+
+      var rotaAtual = (idx % 2 === 1) ? coords.slice().reverse() : coords.slice();
+
+      if (linhaUnicaCoords.length === 0) {
+        linhaUnicaCoords = linhaUnicaCoords.concat(rotaAtual);
+        return;
+      }
+
+      var ultimo = linhaUnicaCoords[linhaUnicaCoords.length - 1];
+      var alvo = findReachablePointOnRoute(rotaAtual, ultimo, areaGeo, obstacleBuffers, sampleStepMeters);
+      if (!alvo) return;
+
+      var nearest = turf.nearestPointOnLine(turf.lineString(rotaAtual), turf.point(alvo), { units: 'meters' });
+      var split = Number.isInteger(nearest.properties.index) ? nearest.properties.index : 0;
+      rotaAtual = rotaAtual.slice(split);
+      rotaAtual[0] = alvo;
+
+      linhaUnicaCoords.push(alvo);
+      linhaUnicaCoords = linhaUnicaCoords.concat(rotaAtual);
+    });
+
+    if (linhaUnicaCoords.length >= 2) {
+      rotasLayer.clearLayers();
+      var linhaUnica = L.polyline(linhaUnicaCoords.map(function (c) { return [c[1], c[0]]; }), {
+        color: cor,
+        weight: 3,
+        opacity: 0.95
+      }).addTo(rotasLayer);
+      routeLayers = [linhaUnica];
+    }
+  }
+
+  if (droneMarker && routeCoordsCollection.length > 0) {
     var droneCentro = droneMarker.getBounds().getCenter();
     var conexoesCriadas = 0;
+    var droneCoord = [droneCentro.lng, droneCentro.lat];
 
-    for (var i = 0; i < routeLayers.length; i += conexaoStep) {
-      var l = routeLayers[i];
-      var coords = l.getLatLngs();
+    for (var i = 0; i < routeCoordsCollection.length; i += conexaoStep) {
+      var coords = routeCoordsCollection[i];
       if (!coords || coords.length < 2) continue;
+      var alvoSeguro = findReachablePointOnRoute(coords, droneCoord, areaGeo, obstacleBuffers, sampleStepMeters);
+      if (!alvoSeguro) continue;
 
       L.polyline([
         [droneCentro.lat, droneCentro.lng],
-        [coords[0].lat, coords[0].lng]
-      ], {
-        color: droneColor,
-        weight: 1.5,
-        dashArray: '6,6',
-        opacity: 0.85
-      }).addTo(extrasLayer);
-
-      L.polyline([
-        [droneCentro.lat, droneCentro.lng],
-        [coords[coords.length - 1].lat, coords[coords.length - 1].lng]
+        [alvoSeguro[1], alvoSeguro[0]]
       ], {
         color: droneColor,
         weight: 1.5,
