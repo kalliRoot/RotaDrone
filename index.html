@@ -2,161 +2,449 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Drone Rastro - Conexão em Cada Linha</title>
+  <title>DRONE RASTRO — Sistema de Voo Inteligente</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Segoe UI',Arial,sans-serif;overflow:hidden}
-    #map{height:100vh;width:100vw}
-    .toolbar{
-      position:absolute;
-      top:10px;
-      left:10px;
-      background:white;
-      padding:14px;
-      border-radius:10px;
-      box-shadow:0 3px 15px rgba(0,0,0,0.25);
-      z-index:1000;
-      display:flex;
-      flex-direction:column;
-      gap:7px;
-      width:290px;
-      max-height:95vh;
-      overflow-y:auto;
-      transition:all 0.3s ease;
+    :root {
+      --bg: #050a12;
+      --panel: #080f1c;
+      --border: #0ff2;
+      --accent: #00f5ff;
+      --accent2: #00ff88;
+      --accent3: #ff3e6c;
+      --accent4: #ff9f00;
+      --text: #cceeff;
+      --text2: #6699bb;
+      --glow: 0 0 12px #00f5ff88;
+      --font-display: 'Orbitron', monospace;
+      --font-mono: 'Share Tech Mono', monospace;
     }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-mono);
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #map {
+      height: 100vh;
+      width: 100vw;
+      transition: transform 0.3s ease;
+      filter: brightness(0.95) saturate(1.1);
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,245,255,0.015) 2px,
+        rgba(0,245,255,0.015) 4px
+      );
+      z-index: 9998;
+    }
+
+    .toolbar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: linear-gradient(160deg, #080f1c 0%, #050c18 100%);
+      border: 1px solid var(--border);
+      padding: 16px 14px;
+      border-radius: 6px;
+      box-shadow: 0 0 30px #00f5ff22, inset 0 0 20px #00112233;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 300px;
+      max-height: 95vh;
+      overflow-y: auto;
+      transition: all 0.3s ease;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) transparent;
+    }
+
+    .toolbar::-webkit-scrollbar { width: 4px; }
+    .toolbar::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
+
+    .toolbar::before, .toolbar::after {
+      content: '';
+      position: absolute;
+      width: 12px; height: 12px;
+      border-color: var(--accent);
+      border-style: solid;
+    }
+    .toolbar::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+    .toolbar::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
     .toolbar.minimized {
       width: auto;
-      padding: 8px;
+      padding: 10px;
       max-height: none;
       overflow: visible;
     }
-    .toolbar.minimized > *:not(#btnToggleToolbar) {
-      display: none;
+    .toolbar.minimized > *:not(#btnToggleToolbar) { display: none; }
+    .toolbar.minimized #btnToggleToolbar { display: block; min-width: 180px; margin: 0; }
+
+    .hud-title {
+      text-align: center;
+      font-family: var(--font-display);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-shadow: var(--glow);
+      padding: 4px 0 6px;
+      border-bottom: 1px solid #00f5ff33;
+      margin-bottom: 2px;
     }
-    .toolbar.minimized #btnToggleToolbar {
+
+    .hud-subtitle {
+      text-align: center;
+      font-size: 9px;
+      color: var(--text2);
+      letter-spacing: 2px;
+      margin-top: -4px;
+      margin-bottom: 4px;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--accent);
+      text-transform: uppercase;
+      padding: 6px 0 3px;
+      border-top: 1px solid #00f5ff22;
+      margin-top: 4px;
+      text-shadow: var(--glow);
+    }
+
+    .toolbar button {
+      padding: 10px 12px;
+      border: 1px solid #00f5ff33;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+      background: #00f5ff08;
+      color: var(--text);
+      text-align: center;
+      white-space: nowrap;
+      overflow: visible;
+      text-overflow: clip;
+      line-height: 1.2;
+    }
+
+    .toolbar button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: 0 0 12px #00f5ff44;
+      background: #00f5ff10;
+    }
+
+    .btn-toggle  { border-color: #0ff4; color: var(--text2); font-size: 11px; white-space: normal; }
+    .btn-area    { border-color: #00f5ff66; color: #00efff; }
+    .btn-obs     { border-color: #ff3e6c66; color: #ff3e6c; }
+    .btn-drone   { border-color: #ff9f0066; color: #ff9f00; }
+    .btn-edit    { border-color: #00ff8866; color: var(--accent2); }
+    .btn-gerar   {
+      background: linear-gradient(90deg, #00f5ff10, #00ff8810);
+      border-color: var(--accent2);
+      color: var(--accent2);
+      font-family: var(--font-display);
+      font-size: 14px;
+      letter-spacing: 2px;
+      padding: 12px;
+      box-shadow: 0 0 12px #00ff8833;
+    }
+    .btn-gerar:hover { box-shadow: 0 0 24px #00ff8877; }
+    .btn-desfazer { border-color: #8886; color: #aaa; }
+    .btn-limpar   { border-color: #8886; color: #aaa; }
+    .btn-download { border-color: #9b59b666; color: #c39bd3; }
+    .btn-gps      { border-color: #00f5ff44; color: var(--accent); }
+    .btn-busca    { border-color: #ff9f0044; color: var(--accent4); }
+    .btn-rem-conn { border-color: #ff3e6c33; color: #ff6688; font-size: 11px; white-space: normal; }
+    .btn-reset    { border-color: #0ff3; color: var(--text2); font-size: 11px; white-space: normal; }
+
+    .row { display: flex; gap: 6px; }
+    .row button { flex: 1; white-space: normal; }
+
+    label {
+      font-size: 11px;
+      color: var(--text2);
       display: block;
-      min-width: 160px;
-      margin: 0;
     }
-    .toolbar h3{text-align:center;font-size:15px;margin-bottom:2px}
-    .toolbar button{padding:9px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:13px;transition:all 0.2s;}
-    .toolbar button:hover{opacity:0.88;transform:scale(1.02)}
-    .btn-toggle{background:#37474F;color:white;margin-bottom:5px;}
-    .btn-area{background:#2196F3;color:white}
-    .btn-obs{background:#f44336;color:white}
-    .btn-drone{background:#FF9800;color:white}
-    .btn-gerar{background:#4CAF50;color:white;font-size:15px;padding:11px}
-    .btn-desfazer{background:#9E9E9E;color:white}
-    .btn-limpar{background:#607D8B;color:white}
-    .btn-download{background:#9C27B0;color:white}
-    .btn-gps{background:#00BCD4;color:white;}
-    .btn-busca{background:#FFC107;color:#333;}
-    .toolbar input[type=range]{width:100%}
-    .toolbar hr{margin:2px 0;border:none;border-top:1px solid #eee}
-    .lbl{font-size:12px;font-weight:600;color:#555}
-    .row{display:flex;gap:5px}
-    .row button{flex:1}
-    .busca-container{display:flex;gap:5px;margin-bottom:5px;}
-    .busca-container input{flex:1;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:12px;}
-    .status{position:absolute;bottom:20px;left:10px;background:rgba(0,0,0,0.72);color:white;padding:8px 16px;border-radius:25px;font-size:14px;z-index:1000;backdrop-filter:blur(5px);max-width:340px;}
-    .area-info{position:absolute;background:rgba(255,255,255,0.9);padding:8px 14px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.18);z-index:900;text-align:center;pointer-events:auto;display:none;min-width:150px;cursor:move;border:1px solid rgba(0,0,0,0.1);}
-    .area-info .ha{font-size:22px;font-weight:700;color:#1a6e1a}
-    .area-info .nome{font-size:13px;color:#444;margin-top:2px;word-break:break-word}
-    .legenda{position:absolute;bottom:20px;right:10px;background:rgba(255,255,255,0.92);padding:8px 12px;border-radius:8px;font-size:12px;z-index:1000;box-shadow:0 2px 5px rgba(0,0,0,0.18);}
-    label{font-size:12px}
-    input[type=text],input[type=number]{padding:5px;border:1px solid #ccc;border-radius:4px;font-size:13px;}
-    .note{font-size:11px;color:#888;margin-top:2px;}
-    .section-title{font-size:13px;font-weight:700;color:#333;margin-top:5px;margin-bottom:2px;}
+
+    input[type=range] {
+      width: 100%;
+      -webkit-appearance: none;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent) 0%, #00f5ff44 100%);
+      border-radius: 2px;
+      outline: none;
+      margin: 5px 0;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px; height: 12px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--accent);
+      cursor: pointer;
+    }
+
+    input[type=text], input[type=number] {
+      padding: 6px 8px;
+      background: #00f5ff08;
+      border: 1px solid #00f5ff33;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text);
+      outline: none;
+      width: 70px;
+    }
+    input[type=text]:focus, input[type=number]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 6px #00f5ff44;
+    }
+    input[type=text] { width: 100%; }
+    input[type=color] {
+      width: 40px; height: 24px;
+      border: 1px solid #00f5ff33;
+      border-radius: 3px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .busca-container {
+      display: flex;
+      gap: 6px;
+    }
+    .busca-container input {
+      flex: 1;
+      width: auto;
+    }
+
+    .note {
+      font-size: 10px;
+      color: #4488aa;
+      margin-top: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #00f5ff15;
+      margin: 4px 0;
+    }
+
+    .status {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #080f1cee;
+      border: 1px solid #00f5ff44;
+      color: var(--accent);
+      padding: 8px 20px;
+      border-radius: 30px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      z-index: 1000;
+      backdrop-filter: blur(8px);
+      max-width: 500px;
+      text-align: center;
+      box-shadow: 0 0 20px #00f5ff22;
+      letter-spacing: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status::before {
+      content: '▶ ';
+      color: var(--accent2);
+    }
+
+    .area-info {
+      position: absolute;
+      background: none;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      box-shadow: 0 0 20px #00f5ff44;
+      z-index: 900;
+      text-align: center;
+      pointer-events: auto;
+      display: none;
+      min-width: 140px;
+      cursor: move;
+    }
+
+    .area-info .ha {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 900;
+      color: var(--accent2);
+      text-shadow: 0 0 10px #00ff8866;
+    }
+
+    .area-info .nome {
+      font-size: 10px;
+      color: var(--text2);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .legenda {
+      position: absolute;
+      bottom: 20px;
+      right: 12px;
+      background: #080f1cee;
+      border: 1px solid #00f5ff33;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      z-index: 1000;
+      box-shadow: 0 0 15px #00f5ff11;
+      color: var(--text2);
+      line-height: 1.8;
+    }
+
+    .legenda b {
+      font-family: var(--font-display);
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--accent);
+      display: block;
+      margin-bottom: 5px;
+    }
+
     .drone-connection {
-      stroke-dasharray: 6, 6;
-      animation: dash 20s linear infinite;
+      stroke-dasharray: 5, 6;
+      animation: dashflow 1.5s linear infinite;
     }
-    @keyframes dash {
-      to {
-        stroke-dashoffset: -100;
-      }
+
+    @keyframes dashflow {
+      to { stroke-dashoffset: -22; }
     }
+
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 12px #00ff8833; }
+      50% { box-shadow: 0 0 28px #00ff8888; }
+    }
+
+    .btn-gerar { animation: pulse-border 2s ease-in-out infinite; }
   </style>
 </head>
 <body>
 <div class="toolbar" id="toolbar">
-  <button class="btn-toggle" id="btnToggleToolbar">🗕 Minimizar painel</button>
-  
-  <h3>🎮 Controle de Voo v8 - Conexão por Linha</h3>
-  
-  <div class="section-title">🔍 Localização</div>
+  <button class="btn-toggle" id="btnToggleToolbar">◧ MINIMIZAR PAINEL</button>
+
+  <div class="hud-title">◈ DRONE RASTRO ◈</div>
+  <div class="hud-subtitle">SISTEMA DE VOO INTELIGENTE</div>
+
+  <div class="section-title">⊕ LOCALIZAÇÃO</div>
   <div class="busca-container">
-    <input type="text" id="searchInput" placeholder="Endereço ou local...">
-    <button class="btn-busca" id="btnBuscar">🔍</button>
+    <input type="text" id="searchInput" placeholder="Buscar endereço...">
+    <button class="btn-busca" id="btnBuscar">⌕ BUSCAR</button>
   </div>
-  <div class="row">
-    <button class="btn-gps" id="btnGPS">📍 Minha Localização</button>
-  </div>
-  
+  <button class="btn-gps" id="btnGPS">◎ MINHA LOCALIZAÇÃO</button>
+
   <hr>
-  <div class="section-title">📋 Ações principais</div>
-  <button class="btn-area" id="btnArea">📐 1. Mapear Área</button>
-  <button class="btn-obs" id="btnObs">🌲 2. Adicionar Obstáculo</button>
-  <button class="btn-drone" id="btnDrone">📍 3. Posicionar Drone</button>
-  <button class="btn-area" id="btnEditarPontos">🧷 4. Editar Pontos</button>
-  
+  <div class="section-title">⊞ AÇÕES</div>
+  <button class="btn-area" id="btnArea">▣ 1. MAPEAR ÁREA</button>
+  <button class="btn-obs" id="btnObs">⊗ 2. ADICIONAR OBSTÁCULO</button>
+  <button class="btn-drone" id="btnDrone">◈ 3. POSICIONAR DRONE</button>
+  <button class="btn-edit" id="btnEditarPontos">⌖ 4. EDITAR PONTOS</button>
+
   <hr>
   <div class="row">
-    <button class="btn-desfazer" id="btnDesfazer">↩️ Desfazer</button>
-    <button class="btn-limpar" id="btnLimpar">🧹 Limpar</button>
+    <button class="btn-desfazer" id="btnDesfazer">↩ DESFAZER</button>
+    <button class="btn-limpar" id="btnLimpar">⊘ LIMPAR</button>
   </div>
-  
+
   <hr>
-  <div class="section-title">⚙️ Rotas</div>
-  <label>Ângulo: <input type="range" id="angulo" min="0" max="179" value="0"> <span id="anguloVal">0°</span></label>
-  <label>Espaçamento (m): <input type="number" id="espacamento" value="5" min="1" max="500" style="width:70px"></label>
-  <label>Cor da rota: <input type="color" id="cor" value="#00ff00"></label>
-  <label>Cor da borda: <input type="color" id="corBorda" value="#2196F3"></label>
-  
-  <div class="section-title">🌲 Obstáculos</div>
-  <label>Margem (m): <input type="number" id="margemObs" value="5" min="1" max="100" style="width:70px"></label>
-  <label>Precisão amostragem (m): <input type="number" id="sampleStep" value="1.0" min="0.3" max="5" step="0.1" style="width:70px"></label>
-  <div class="note">⬇️ Menor = mais preenchimento</div>
-  
-  <div class="section-title">📍 Drone (Aviãozinho)</div>
+  <div class="section-title">⚙ ROTAS</div>
+  <label>Ângulo: <input type="range" id="angulo" min="0" max="179" value="0"> <span id="anguloVal" style="color:var(--accent)">0°</span></label>
+  <label>Espaçamento (m): <input type="number" id="espacamento" value="5" min="1" max="500"></label>
+  <label style="display:flex;align-items:center;gap:8px;">Cor da rota: <input type="color" id="cor" value="#00ff88"></label>
+  <label style="display:flex;align-items:center;gap:8px;">Cor da borda: <input type="color" id="corBorda" value="#00f5ff"></label>
+
+  <div class="section-title">⊗ OBSTÁCULOS</div>
+  <label>Margem (m): <input type="number" id="margemObs" value="5" min="1" max="100"></label>
+  <label>Precisão amostragem (m): <input type="number" id="sampleStep" value="1.0" min="0.3" max="5" step="0.1"></label>
+  <div class="note">◀ Menor valor = maior precisão de desvio</div>
+
+  <div class="section-title">◈ DRONE</div>
   <label>Tamanho: <input type="range" id="droneSize" min="3" max="20" value="8"></label>
-  <label>Cor do drone: <input type="color" id="droneColor" value="#FF9800"></label>
-  <label>Rotação (°): <input type="range" id="droneHeading" min="0" max="359" value="0"> <span id="headingVal">0°</span></label>
-  <label>Conectar a cada N linhas: <input type="number" id="conexaoStep" value="1" min="1" max="200" style="width:70px"></label>
-  <div class="note">1 = conecta em todas as linhas | 2 = conecta em linhas alternadas</div>
-  
-  <div class="section-title">📊 Informações</div>
-  <label>Tamanho info (px): <input type="range" id="infoSize" min="14" max="48" value="22"> <span id="infoSizeVal">22px</span></label>
-  <label>Nome da área:<br><input type="text" id="nomeArea" placeholder="Ex: Fazenda João" style="width:100%;margin-top:3px"></label>
-  
+  <label style="display:flex;align-items:center;gap:8px;">Cor: <input type="color" id="droneColor" value="#ff9f00"></label>
+  <label>Rotação (°): <input type="range" id="droneHeading" min="0" max="359" value="0"> <span id="headingVal" style="color:var(--accent4)">0°</span></label>
+  <label>Conectar a cada N linhas: <input type="number" id="conexaoStep" value="1" min="1" max="200"></label>
+  <div class="note">1 = todas | 2 = alternadas | ⚡ Conexões inteligentes</div>
+
+  <div class="section-title">◫ VISUALIZAÇÃO</div>
+  <label>Rotação do mapa: <input type="range" id="mapBearing" min="0" max="359" value="0"> <span id="bearingVal" style="color:var(--accent)">0°</span></label>
+  <div class="row">
+    <button class="btn-reset" id="btnResetBearing">⟲ RESETAR</button>
+    <button class="btn-rem-conn" id="btnRemoverConexoes">⊘ REMOVER CONEXÕES</button>
+  </div>
+
+  <div class="section-title">◉ INFORMAÇÕES</div>
+  <label>Tamanho info: <input type="range" id="infoSize" min="1" max="20" value="10"> <span id="infoSizeVal" style="color:var(--accent)">22px</span></label>
+  <label>Nome da área:<br><input type="text" id="nomeArea" placeholder="Ex: Fazenda Norte" style="margin-top:4px"></label>
+
   <hr>
-  <button class="btn-gerar" id="btnGerar">✈️ GERAR ROTAS</button>
-  <button class="btn-download" id="btnDownload">⬇️ Baixar KML</button>
-  <small style="text-align:center;color:#4CAF50;">✅ Cobertura total | ❌ Desvia obstáculos | 🔗 Conexão por linha</small>
+  <button class="btn-gerar" id="btnGerar">▶ GERAR ROTAS</button>
+  <button class="btn-download" id="btnDownload">⬇ EXPORTAR KML</button>
+  <div class="note" style="text-align:center;margin-top:4px;">✦ Cobertura total ✦ Desvia obstáculos ✦ Conexões inteligentes</div>
 </div>
 
 <div class="area-info" id="areaInfo">
   <div class="ha" id="areaHa">0 ha</div>
   <div class="nome" id="areaNome"></div>
 </div>
-<div class="status" id="status">🎯 Pronto. Use a busca ou GPS para navegar.</div>
+
+<div class="status" id="status">SISTEMA PRONTO — USE A BUSCA OU GPS PARA NAVEGAR</div>
+
 <div class="legenda">
-  <b>Legenda:</b><br>
-  <span style="color:#2196F3">■</span> Área mapeada<br>
-  <span style="color:#f44336">■</span> Obstáculos<br>
-  <span style="color:#FF9800">✈️</span> Drone<br>
-  <span style="color:#00ff00">━</span> Rotas (Serpentina)<br>
-  <span style="color:#FF9800">┅</span> Conexões do drone (a cada N linhas)<br>
-  <span style="color:#00BCD4">●</span> Sua localização
+  <b>◈ LEGENDA</b>
+  <span style="color:#00f5ff">■</span> Área mapeada<br>
+  <span style="color:#ff3e6c">■</span> Obstáculos<br>
+  <span style="color:#ff9f00">✈</span> Drone<br>
+  <span style="color:#00ff88">━</span> Rotas (Serpentina)<br>
+  <span style="color:#ff9f00">┅</span> Conexões inteligentes<br>
+  <span style="color:#00f5ff">●</span> Sua localização
 </div>
+
 <div id="map"></div>
 
 <script>
+// ═══════════════════════════════════════════════════════════════════════════
+//                    SCRIPT COMPLETO (FUNCIONAL - V9)
+// ═══════════════════════════════════════════════════════════════════════════
+
 // --- Inicialização do mapa ---
 var map = L.map('map', { doubleClickZoom: false }).setView([-22.33, -50.41], 18);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
@@ -179,13 +467,16 @@ var editModeArea = false;
 var editAreaLayer = null;
 
 // --- Armazena as linhas originais para conexão ---
-var originalScanLines = []; // Armazena cada linha individual (antes da serpentina)
+var originalScanLines = [];
 
 // --- Estilos ---
-var estiloArea = { color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.15, weight: 3 };
-var estiloObs = { color: '#f44336', fillColor: '#f44336', fillOpacity: 0.3, weight: 3 };
+var estiloArea = { color: '#00f5ff', fillColor: '#00f5ff', fillOpacity: 0.12, weight: 3 };
+var estiloObs = { color: '#ff3e6c', fillColor: '#ff3e6c', fillOpacity: 0.25, weight: 3 };
 
 var isGenerating = false;
+
+var globalAreaGeo = null;
+var globalObstacleBuffers = [];
 
 function setStatus(m) { 
   document.getElementById('status').innerHTML = m; 
@@ -193,7 +484,7 @@ function setStatus(m) {
 }
 
 function atualizarAreaStyle() {
-  var color = document.getElementById('corBorda').value || '#2196F3';
+  var color = document.getElementById('corBorda').value || '#00f5ff';
   estiloArea.color = color;
   estiloArea.fillColor = color;
   var layer = areaLayer.getLayers()[0];
@@ -209,7 +500,7 @@ function atualizarAreaStyle() {
   if (!toolbar || !btn) return;
   btn.onclick = function () {
     var isMin = toolbar.classList.toggle('minimized');
-    btn.textContent = isMin ? '🗖 Expandir painel' : '🗕 Minimizar painel';
+    btn.textContent = isMin ? '◨ EXPANDIR PAINEL' : '◧ MINIMIZAR PAINEL';
   };
 })();
 
@@ -235,7 +526,7 @@ document.getElementById('btnBuscar').onclick = function() {
       map.setView([lat, lon], 18);
       if (locationMarker) map.removeLayer(locationMarker);
       locationMarker = L.marker([lat, lon], {
-        icon: L.divIcon({className: 'custom-location-marker', html: '📍', iconSize: [20,20]})
+        icon: L.divIcon({className: 'custom-location-marker', html: '<div style="color:#00f5ff;font-size:22px;text-shadow:0 0 8px #00f5ff">◎</div>', iconSize: [24,24]})
       }).addTo(map).bindPopup(data[0].display_name).openPopup();
       setStatus('📍 ' + data[0].display_name);
     })
@@ -260,8 +551,8 @@ document.getElementById('btnGPS').onclick = function() {
       if (locationMarker) map.removeLayer(locationMarker);
       locationMarker = L.circleMarker([lat, lng], {
         radius: 8,
-        color: '#00BCD4',
-        fillColor: '#00BCD4',
+        color: '#00f5ff',
+        fillColor: '#00f5ff',
         fillOpacity: 0.5,
         weight: 2
       }).addTo(map).bindPopup('Sua localização').openPopup();
@@ -346,6 +637,7 @@ document.getElementById('infoSize').oninput = function() {
   var val = this.value;
   document.getElementById('infoSizeVal').innerText = val + 'px';
   document.getElementById('areaHa').style.fontSize = val + 'px';
+  document.getElementById('areaNome').style.fontSize = (val * 0.4) + 'px';
 };
 
 // Ângulo - ATUALIZAÇÃO AUTOMÁTICA
@@ -375,7 +667,7 @@ document.getElementById('sampleStep').oninput = function() {
 };
 
 document.getElementById('conexaoStep').oninput = function() {
-  if (areaLayer.getLayers().length > 0 && rotasLayer.getLayers().length > 0) {
+  if (areaLayer.getLayers().length > 0 && originalScanLines.length > 0) {
     conectarDroneAsLinhasOriginais();
   }
 };
@@ -391,10 +683,36 @@ document.getElementById('droneColor').oninput = function() {
   if (!droneMarker) return;
   var c = droneMarker.getBounds().getCenter();
   criarDrone(c.lat, c.lng);
-  if (rotasLayer.getLayers().length > 0) {
+  if (originalScanLines.length > 0) {
     conectarDroneAsLinhasOriginais();
   }
 };
+
+// ====================== ROTAÇÃO DO MAPA ======================
+var mapContainer = document.getElementById('map');
+var currentBearing = 0;
+document.getElementById('mapBearing').addEventListener('input', function() {
+  var val = parseInt(this.value, 10);
+  document.getElementById('bearingVal').innerText = val + '°';
+  currentBearing = val;
+  mapContainer.style.transform = 'rotate(' + val + 'deg)';
+  mapContainer.style.width = '100vw';
+  mapContainer.style.height = '100vh';
+  map.invalidateSize();
+});
+document.getElementById('btnResetBearing').addEventListener('click', function() {
+  document.getElementById('mapBearing').value = 0;
+  document.getElementById('bearingVal').innerText = '0°';
+  mapContainer.style.transform = 'rotate(0deg)';
+  map.invalidateSize();
+  currentBearing = 0;
+});
+
+// ====================== REMOVER APENAS CONEXÕES DO DRONE ======================
+document.getElementById('btnRemoverConexoes').addEventListener('click', function() {
+  extrasLayer.clearLayers();
+  setStatus('🧹 Conexões do drone removidas. As rotas permanecem.');
+});
 
 // Botões principais
 document.getElementById('btnArea').onclick = function() {
@@ -453,14 +771,14 @@ document.getElementById('btnEditarPontos').onclick = function() {
         gerarRotas();
       }
     });
-    this.textContent = '✅ Concluir edição';
+    this.textContent = '✓ CONCLUIR EDIÇÃO';
     setStatus('🧷 Ajuste os vértices da área. Clique em Concluir edição quando terminar.');
   } else {
     editModeArea = false;
     if (editAreaLayer && editAreaLayer.editing) {
       editAreaLayer.editing.disable();
     }
-    this.textContent = '🧷 4. Editar Pontos';
+    this.textContent = '⌖ 4. EDITAR PONTOS';
     atualizarInfoArea(true);
     if (rotasLayer.getLayers().length > 0) {
       setStatus('⏳ Atualizando rotas com a área editada...');
@@ -476,7 +794,7 @@ function criarDrone(lat, lng) {
 
   var size = parseInt(document.getElementById('droneSize').value, 10) || 8;
   var sizeDeg = size / 100000;
-  var droneColor = document.getElementById('droneColor').value || '#FF9800';
+  var droneColor = document.getElementById('droneColor').value || '#ff9f00';
   var heading = parseInt(document.getElementById('droneHeading').value, 10) || 0;
 
   var planeLatLngs = buildDronePlaneLatLngs(lat, lng, sizeDeg, heading);
@@ -491,7 +809,6 @@ function criarDrone(lat, lng) {
   ativarDrag(droneMarker);
   setStatus('✅ Drone posicionado. Pode arrastar para ajustar.');
 
-  // Conecta o drone às linhas originais
   if (originalScanLines.length > 0) {
     conectarDroneAsLinhasOriginais();
   }
@@ -499,14 +816,14 @@ function criarDrone(lat, lng) {
 
 function ativarDrag(poly) {
   var dragging = false, last;
-  
+
   poly.on('mousedown', function(e) {
     dragging = true;
     last = e.latlng;
     map.dragging.disable();
     L.DomEvent.stop(e);
   });
-  
+
   map.on('mousemove', function(e) {
     if (!dragging) return;
     var dLat = e.latlng.lat - last.lat;
@@ -516,7 +833,7 @@ function ativarDrag(poly) {
       return [p.lat + dLat, p.lng + dLng];
     }));
   });
-  
+
   map.on('mouseup', function() {
     if (dragging) {
       dragging = false;
@@ -537,7 +854,7 @@ map.on('click', function(e) {
 
 map.on(L.Draw.Event.CREATED, function(e) {
   var layer = e.layer;
-  
+
   if (drawAreaHandler && drawAreaHandler.enabled()) {
     if (areaLayer.getLayers().length) {
       historico.areas.push(areaLayer.getLayers()[0]);
@@ -553,7 +870,7 @@ map.on(L.Draw.Event.CREATED, function(e) {
     historico.obstaculos.push(layer);
     drawObsHandler.disable();
     setStatus('🌲 Obstáculo adicionado.');
-    
+
     if (rotasLayer.getLayers().length > 0) {
       gerarRotas();
     }
@@ -578,7 +895,7 @@ map.on(L.Draw.Event.DELETED, function() {
 document.getElementById('btnDesfazer').onclick = function() {
   if (drawObsHandler) drawObsHandler.disable();
   if (drawAreaHandler) drawAreaHandler.disable();
-  
+
   if (historico.obstaculos.length) {
     var ultimo = historico.obstaculos.pop();
     obstaculosLayer.removeLayer(ultimo);
@@ -674,6 +991,38 @@ function isPathValid(coordA, coordB, areaGeo, obstacleBuffers, sampleStepMeters)
   return true;
 }
 
+function buildVisibleConnectionSegments(coordA, coordB, areaGeo, obstacleBuffers, sampleStepMeters) {
+  var line = turf.lineString([coordA, coordB]);
+  var totalKm = turf.length(line, { units: 'kilometers' });
+  if (totalKm === 0) return [];
+
+  var stepKm = Math.max(sampleStepMeters, 1) / 1000;
+  var sampled = [];
+  for (var d = 0; d <= totalKm + 1e-9; d += stepKm) {
+    var p = turf.along(line, Math.min(d, totalKm), { units: 'kilometers' });
+    sampled.push(p.geometry.coordinates);
+  }
+
+  var last = sampled[sampled.length - 1];
+  if (!last || last[0] !== coordB[0] || last[1] !== coordB[1]) {
+    sampled.push(coordB);
+  }
+
+  var segments = [];
+  var current = [];
+  sampled.forEach(function (coord) {
+    if (pointIsValid(coord, areaGeo, obstacleBuffers)) {
+      current.push(coord);
+    } else {
+      if (current.length >= 2) segments.push(current.slice());
+      current = [];
+    }
+  });
+
+  if (current.length >= 2) segments.push(current);
+  return segments;
+}
+
 function tryConnectSegment(lastCoord, segment, areaGeo, obstacleBuffers, sampleStepMeters) {
   var segmentCoords = segment.geometry.coordinates;
 
@@ -762,45 +1111,59 @@ function conectarDroneAsLinhasOriginais() {
     return;
   }
 
-  // Limpa apenas as conexões antigas
   extrasLayer.clearLayers();
 
   var droneCentro = droneMarker.getBounds().getCenter();
-  var droneColor = document.getElementById('droneColor').value || '#FF9800';
+  var droneColor = document.getElementById('droneColor').value || '#ff9f00';
   var conexaoStep = parseInt(document.getElementById('conexaoStep').value, 10) || 1;
   var conexoesCriadas = 0;
+  var sampleStepMeters = 0.5;
 
   console.log('Conectando drone a cada ' + conexaoStep + ' linhas...');
-  console.log('Total de linhas originais:', originalScanLines.length);
 
-  // Conecta a cada N linhas originais
   for (var i = 0; i < originalScanLines.length; i += conexaoStep) {
     var linha = originalScanLines[i];
     if (!linha || linha.length < 2) continue;
-    
-    // Pega o ponto médio da linha para conectar (mais representativo)
+
     var midIndex = Math.floor(linha.length / 2);
     var pontoConexao = linha[midIndex];
-    
-    // Converte para LatLng
-    var pontoLatLng = [pontoConexao[1], pontoConexao[0]];
-    
-    // Desenha linha pontilhada do drone até o ponto médio da linha
-    L.polyline([
-      [droneCentro.lat, droneCentro.lng],
-      pontoLatLng
-    ], {
-      color: droneColor,
-      weight: 1.5,
-      dashArray: '6,6',
-      opacity: 0.85,
-      className: 'drone-connection'
-    }).addTo(extrasLayer);
-    
+    var dronePoint = [droneCentro.lng, droneCentro.lat];
+    var visibleSegments = [];
+
+    if (globalAreaGeo) {
+      visibleSegments = buildVisibleConnectionSegments(dronePoint, pontoConexao, globalAreaGeo, globalObstacleBuffers, sampleStepMeters);
+
+      if (visibleSegments.length === 0) {
+        for (var j = 0; j < linha.length; j++) {
+          visibleSegments = buildVisibleConnectionSegments(dronePoint, linha[j], globalAreaGeo, globalObstacleBuffers, sampleStepMeters);
+          if (visibleSegments.length > 0) break;
+        }
+      }
+    }
+
+    if (!globalAreaGeo || visibleSegments.length === 0) {
+      continue;
+    }
+
+    visibleSegments.forEach(function (segment) {
+      var latlngs = segment.map(function (coord) { return [coord[1], coord[0]]; });
+      L.polyline(latlngs, {
+        color: droneColor,
+        weight: 1.5,
+        dashArray: '6,6',
+        opacity: 0.85,
+        className: 'drone-connection'
+      }).addTo(extrasLayer);
+    });
+
     conexoesCriadas++;
   }
 
-  console.log('✅ Drone conectado a ' + conexoesCriadas + ' linhas (respeitando step ' + conexaoStep + ')');
+  if (conexoesCriadas === 0) {
+    console.log('Nenhuma conexão válida encontrada.');
+  }
+
+  console.log('✅ Drone conectado a ' + conexoesCriadas + ' linhas (step ' + conexaoStep + ')');
   setStatus('✈️ Drone conectado a ' + conexoesCriadas + ' linhas (step ' + conexaoStep + ')');
 }
 
@@ -810,7 +1173,7 @@ function gerarRotas() {
 
   rotasLayer.clearLayers();
   extrasLayer.clearLayers();
-  originalScanLines = []; // Limpa as linhas originais
+  originalScanLines = [];
 
   if (!areaLayer.getLayers().length) {
     isGenerating = false;
@@ -825,63 +1188,40 @@ function gerarRotas() {
   var angulo = parseFloat(document.getElementById('angulo').value);
   var espacamento = parseFloat(document.getElementById('espacamento').value) || 5;
   var margemObs = parseFloat(document.getElementById('margemObs').value) || 5;
-
-  var conexaoStep = parseInt(document.getElementById('conexaoStep').value, 10);
-  if (!Number.isFinite(conexaoStep) || conexaoStep < 1) conexaoStep = 1;
-
   var sampleStepMeters = parseFloat(document.getElementById('sampleStep').value) || 1.0;
-
-  console.log('=== GERANDO ROTAS ===', { 
-    angulo, espacamento, margemObs, sampleStepMeters, conexaoStep
-  });
 
   var obstacleBuffers = [];
   obstaculosGeo.forEach(function (obs, idx) {
     try {
       var b = turf.buffer(obs, margemObs, { units: 'meters', steps: 64 });
-      if (b) {
-        obstacleBuffers.push(b);
-        console.log('Buffer obstáculo', idx, 'criado');
-      }
-    } catch (e) {
-      console.warn('Erro ao criar buffer para obstáculo', idx, e);
-    }
+      if (b) obstacleBuffers.push(b);
+    } catch (e) {}
   });
+
+  globalAreaGeo = areaGeo;
+  globalObstacleBuffers = obstacleBuffers;
 
   var bbox = turf.bbox(areaGeo);
   var centro = turf.center(areaGeo).geometry.coordinates;
-  var bboxPoly = turf.bboxPolygon(bbox);
-  var bboxExpandido = turf.bbox(turf.transformScale(bboxPoly, 2.5));
+  var bboxExpandido = turf.bbox(turf.transformScale(turf.bboxPolygon(bbox), 2.5));
 
   var espacamentoGraus = espacamento / 111320;
   var minX = bboxExpandido[0], maxX = bboxExpandido[2];
   var minY = bboxExpandido[1], maxY = bboxExpandido[3];
 
   var scanSegments = [];
-  var totalLinhas = 0;
 
   for (var y = minY; y <= maxY; y += espacamentoGraus) {
-    totalLinhas++;
     var linha = turf.lineString([[minX, y], [maxX, y]]);
-    if (angulo !== 0) {
-      linha = turf.transformRotate(linha, angulo, { pivot: centro });
-    }
+    if (angulo !== 0) linha = turf.transformRotate(linha, angulo, { pivot: centro });
 
     var validSegments = segmentLineByValidity(linha, areaGeo, obstacleBuffers, sampleStepMeters);
-    
-    // Armazena as coordenadas de cada linha original para conexão do drone
     validSegments.forEach(function(seg) {
       var coords = seg.geometry.coordinates;
-      if (coords && coords.length >= 2) {
-        originalScanLines.push(coords);
-      }
+      if (coords && coords.length >= 2) originalScanLines.push(coords);
     });
-    
     scanSegments.push(validSegments);
   }
-
-  console.log('Total de linhas processadas:', totalLinhas);
-  console.log('Total de segmentos originais armazenados:', originalScanLines.length);
 
   var routeLayers = [];
   var serpentineRoutes = buildSerpentineRoutes(scanSegments, areaGeo, obstacleBuffers, sampleStepMeters);
@@ -890,9 +1230,6 @@ function gerarRotas() {
     if (layer) routeLayers.push(layer);
   });
 
-  console.log('Total de rotas serpentina geradas:', routeLayers.length);
-
-  // Conecta o drone às linhas originais
   if (routeLayers.length > 0 && droneMarker) {
     conectarDroneAsLinhasOriginais();
   }
@@ -900,7 +1237,7 @@ function gerarRotas() {
   if (routeLayers.length === 0) {
     setStatus('⚠️ Nenhuma rota gerada. Ajuste espaçamento/margem/ângulo.');
   } else {
-    setStatus('✈️ ' + routeLayers.length + ' rotas geradas | ' + originalScanLines.length + ' linhas | Conexão step ' + conexaoStep);
+    setStatus('✈️ ' + routeLayers.length + ' rotas geradas | ' + originalScanLines.length + ' linhas | Step conexão ' + document.getElementById('conexaoStep').value);
   }
 
   isGenerating = false;
@@ -912,62 +1249,52 @@ document.getElementById('btnGerar').onclick = function() {
     return;
   }
   setStatus('⏳ Calculando rotas...');
-  setTimeout(function() {
-    gerarRotas();
-  }, 50);
+  setTimeout(gerarRotas, 50);
 };
 
 // Download KML
 document.getElementById('btnDownload').onclick = function() {
   var pms = [];
   var nome = document.getElementById('nomeArea').value.trim() || 'Área';
-  
+
   if (areaLayer.getLayers().length) {
     var geo = areaLayer.getLayers()[0].toGeoJSON();
     var ha = (turf.area(geo) / 10000).toFixed(2);
     var pts = areaLayer.getLayers()[0].getLatLngs()[0];
-    var c = pts.map(function(p) {
-      return p.lng + ',' + p.lat + ',0';
-    }).join(' ');
+    var c = pts.map(p => p.lng + ',' + p.lat + ',0').join(' ');
     c += ' ' + pts[0].lng + ',' + pts[0].lat + ',0';
-    pms.push(`<Placemark><name>${nome} (${ha} ha)</name><Style><PolyStyle><color>33ff0000</color></PolyStyle><LineStyle><color>ffff0000</color><width>2</width></LineStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
+    pms.push(`<Placemark><name>${nome} (${ha} ha)</name><Style><PolyStyle><color>3300f5ff</color></PolyStyle><LineStyle><color>ff00f5ff</color><width>2</width></LineStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
   }
-  
-  obstaculosLayer.eachLayer(function(l) {
+
+  obstaculosLayer.eachLayer(l => {
     var pts = l.getLatLngs()[0];
-    var c = pts.map(function(p) {
-      return p.lng + ',' + p.lat + ',0';
-    }).join(' ');
+    var c = pts.map(p => p.lng + ',' + p.lat + ',0').join(' ');
     c += ' ' + pts[0].lng + ',' + pts[0].lat + ',0';
-    pms.push(`<Placemark><name>Obstáculo</name><Style><PolyStyle><color>660000ff</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
+    pms.push(`<Placemark><name>Obstáculo</name><Style><PolyStyle><color>66ff3e6c</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
   });
-  
+
   var idx = 1;
-  rotasLayer.eachLayer(function(l) {
+  rotasLayer.eachLayer(l => {
     if (!l.getLatLngs || l.getLatLngs().length < 2) return;
     var pts = l.getLatLngs();
-    var c = pts.map(function(p) {
-      return p.lng + ',' + p.lat + ',0';
-    }).join(' ');
-    pms.push(`<Placemark><name>Rota ${idx}</name><Style><LineStyle><color>ff00ff00</color><width>2</width></LineStyle></Style><LineString><tessellate>1</tessellate><coordinates>${c}</coordinates></LineString></Placemark>`);
+    var c = pts.map(p => p.lng + ',' + p.lat + ',0').join(' ');
+    pms.push(`<Placemark><name>Rota ${idx}</name><Style><LineStyle><color>ff00ff88</color><width>2</width></LineStyle></Style><LineString><tessellate>1</tessellate><coordinates>${c}</coordinates></LineString></Placemark>`);
     idx++;
   });
-  
-  extrasLayer.eachLayer(function(l) {
+
+  extrasLayer.eachLayer(l => {
     if (l.getLatLngs && l.getLatLngs().length >= 2) {
       var pts = l.getLatLngs();
-      var c = pts.map(function(p) {
-        return p.lng + ',' + p.lat + ',0';
-      }).join(' ');
-      pms.push(`<Placemark><name>Conexão Drone</name><Style><LineStyle><color>ffff8000</color><width>1</width></LineStyle></Style><LineString><tessellate>1</tessellate><coordinates>${c}</coordinates></LineString></Placemark>`);
+      var c = pts.map(p => p.lng + ',' + p.lat + ',0').join(' ');
+      pms.push(`<Placemark><name>Conexão Drone</name><Style><LineStyle><color>ffff9f00</color><width>1</width></LineStyle></Style><LineString><tessellate>1</tessellate><coordinates>${c}</coordinates></LineString></Placemark>`);
     }
   });
-  
+
   if (idx === 1) {
     alert('Gere as rotas primeiro!');
     return;
   }
-  
+
   var kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>${nome}</name>\n${pms.join('\n')}\n</Document>\n</kml>`;
   var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }));
