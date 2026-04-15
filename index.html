@@ -447,8 +447,8 @@
 
 // --- Inicialização do mapa ---
 var map = L.map('map', { doubleClickZoom: false }).setView([-22.33, -50.41], 18);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Esri'
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
 // --- Camadas ---
